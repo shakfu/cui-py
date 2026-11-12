@@ -16,7 +16,9 @@ from cpython.ref cimport PyObject
 
 import datetime as _datetime
 import sys as _sys
+from collections import deque as _deque
 from collections import namedtuple as _namedtuple
+from time import monotonic as _monotonic
 from collections.abc import Mapping as _Mapping
 
 from cui._cui cimport *
@@ -380,6 +382,209 @@ cdef class TextBuffer:
 
 
 # ---------------------------------------------------------------------------
+# Ring buffers a view reads: log and terminal
+# ---------------------------------------------------------------------------
+
+LogLine = _namedtuple("LogLine", "level time text")
+
+
+cdef class _Pinned:
+    """A buffer that a view reads until its frame is painted.
+
+    The view pins it. Writes made while it is pinned, by another thread while
+    `App.frame()` paints or later in the same build, are queued and applied
+    when the frame ends, so the paint never reads text that changed under it.
+    """
+    cdef int _pins
+    cdef object _pending        # deque of (encoded write, bytes)
+    cdef Py_ssize_t _pending_bytes
+    cdef bint _pending_clear
+    cdef Py_ssize_t _max_items
+
+    def __cinit__(self, *args, **kwargs):
+        self._pending = _deque()
+
+    cdef void _apply(self, object op) noexcept:
+        pass
+
+    cdef void _reset(self) noexcept:
+        pass
+
+    cdef Py_ssize_t _max_bytes(self) noexcept:
+        return 0
+
+    cdef int _write(self, object op, Py_ssize_t nbytes) except -1:
+        if not self._pins:
+            self._apply(op)
+            return 0
+        self._pending.append((op, nbytes))
+        self._pending_bytes += nbytes
+        # the ring would drop the oldest anyway, so the queue stays bounded too
+        while len(self._pending) > self._max_items or self._pending_bytes > self._max_bytes():
+            self._pending_bytes -= self._pending.popleft()[1]
+        return 0
+
+    cdef int _clear(self) except -1:
+        if not self._pins:
+            self._reset()
+            return 0
+        self._pending.clear()
+        self._pending_bytes = 0
+        self._pending_clear = True
+        return 0
+
+    cdef void _pin(self) noexcept:
+        self._pins += 1
+
+    cdef void _unpin(self) noexcept:
+        self._pins -= 1
+        if self._pins:
+            return
+        if self._pending_clear:
+            self._pending_clear = False
+            self._reset()
+        while self._pending:
+            self._apply(self._pending.popleft()[0])
+        self._pending_bytes = 0
+
+
+cdef class LogBuffer(_Pinned):
+    """Lines for `ui.log_view`: a ring of `lines` records over `text_bytes` of text.
+
+    When either is full the oldest lines go. Safe to append from any thread;
+    a write made while a view uses the buffer shows from the next frame.
+    """
+    cdef cui_log_buffer buf
+    cdef cui_log_line *lines
+    cdef char *text
+    cdef double t0
+
+    def __cinit__(self, int lines=4096, Py_ssize_t text_bytes=256 * 1024):
+        if lines < 1:
+            raise ValueError("lines must be at least 1")
+        if text_bytes < 2 or text_bytes > 0x7FFFFFFF:
+            raise ValueError("text_bytes must be between 2 and 2**31 - 1")
+        self.lines = <cui_log_line *>calloc(lines, sizeof(cui_log_line))
+        self.text = <char *>malloc(text_bytes)
+        if self.lines == NULL or self.text == NULL:
+            raise MemoryError()
+        cui_log_init(&self.buf, self.lines, lines, self.text, text_bytes)
+        self._max_items = lines
+        self.t0 = _monotonic()
+
+    def __dealloc__(self):
+        free(self.lines)
+        free(self.text)
+
+    cdef Py_ssize_t _max_bytes(self) noexcept:
+        return self.buf.text_cap
+
+    cdef void _apply(self, object op) noexcept:
+        cdef int level
+        cdef double t
+        cdef bytes b
+        level, t, b = op
+        cui_log_append_text(&self.buf, <cui_log_level>level, t, <const char *>b, <int>len(b))
+
+    cdef void _reset(self) noexcept:
+        cui_log_clear(&self.buf)
+
+    def append(self, text, int level=CUI_LOG_INFO, time=None):
+        """Appends one line at `level`. `time` is in seconds, by default since the buffer was made."""
+        if not 0 <= level < CUI_LOG_LEVEL_COUNT:
+            raise ValueError(f"level must be a LOG_* constant, got {level}")
+        cdef bytes b = _encode(text)
+        if len(b) > 0x7FFFFFFF:
+            raise ValueError("line too long")
+        cdef double t = _monotonic() - self.t0 if time is None else float(time)
+        self._write((level, t, b), len(b))
+
+    def clear(self):
+        self._clear()
+
+    def __len__(self):
+        return self.buf.count
+
+    def __getitem__(self, Py_ssize_t i):
+        """Line `i`, 0 the oldest, as `LogLine(level, time, text)`."""
+        if i < 0:
+            i += self.buf.count
+        cdef const char *s = NULL
+        cdef const cui_log_line *ln = NULL
+        if 0 <= i < self.buf.count:
+            ln = cui_log_get(&self.buf, <int>i, &s)
+        if ln == NULL:
+            raise IndexError("log line out of range")
+        return LogLine(ln.level, ln.time, s[:ln.len].decode("utf-8", "replace"))
+
+    @property
+    def total(self):
+        """Lines ever appended, dropped ones included."""
+        return self.buf.total
+
+    @property
+    def level_counts(self):
+        """Lines of each level now held, indexed by LOG_*."""
+        return tuple([self.buf.level_count[k] for k in range(<int>CUI_LOG_LEVEL_COUNT)])
+
+
+cdef class TerminalBuffer(_Pinned):
+    """Output for `ui.terminal`: ANSI text in a ring of `lines` over `text_bytes`.
+
+    Safe to write from any thread; a write made while a view uses the buffer
+    shows from the next frame.
+    """
+    cdef cui_terminal_buffer buf
+    cdef cui_terminal_line *lines
+    cdef char *text
+
+    def __cinit__(self, int lines=8192, Py_ssize_t text_bytes=512 * 1024):
+        if lines < 2:
+            raise ValueError("lines must be at least 2")
+        if text_bytes < 64 or text_bytes > 0x7FFFFFFF:
+            raise ValueError("text_bytes must be between 64 and 2**31 - 1")
+        self.lines = <cui_terminal_line *>calloc(lines, sizeof(cui_terminal_line))
+        self.text = <char *>malloc(text_bytes)
+        if self.lines == NULL or self.text == NULL:
+            raise MemoryError()
+        cui_terminal_init(&self.buf, self.text, text_bytes, self.lines, lines)
+        self._max_items = 1 << 30   # writes are chunks, not lines: bounded by bytes
+
+    def __dealloc__(self):
+        free(self.lines)
+        free(self.text)
+
+    cdef Py_ssize_t _max_bytes(self) noexcept:
+        return self.buf.text_cap
+
+    cdef void _apply(self, object op) noexcept:
+        cdef bytes b = op
+        cui_terminal_write(&self.buf, <const char *>b, <int>len(b))
+
+    cdef void _reset(self) noexcept:
+        cui_terminal_clear(&self.buf)
+
+    def write(self, data):
+        """Appends output, `str` or bytes; `\\n`, `\\r`, `\\b` and ANSI color codes apply."""
+        cdef bytes b = data.encode("utf-8") if isinstance(data, str) else bytes(data)
+        if len(b) > 0x7FFFFFFF:
+            raise ValueError("write too long; split it")
+        if b:
+            self._write(b, len(b))
+
+    def clear(self):
+        self._clear()
+
+    def __len__(self):
+        return self.buf.count
+
+    @property
+    def total(self):
+        """Lines ever started, dropped ones included."""
+        return self.buf.total
+
+
+# ---------------------------------------------------------------------------
 # Context
 # ---------------------------------------------------------------------------
 
@@ -387,6 +592,7 @@ cdef class TextBuffer:
 cdef class _ContextBase:
     cdef cui_ctx *ui
     cdef list _keep
+    cdef list _pinned       # ring buffers views read this frame
     cdef bint _in_frame
     cdef bint _painting
     cdef int _open_scopes
@@ -394,6 +600,14 @@ cdef class _ContextBase:
 
     def __cinit__(self):
         self._keep = []
+        self._pinned = []
+
+    cdef void _frame_done(self) noexcept:
+        """Drops what the frame's paint needed and applies queued buffer writes."""
+        self._keep = []
+        pinned, self._pinned = self._pinned, []
+        for b in pinned:
+            (<_Pinned>b)._unpin()
 
     cdef int _need_alive(self) except -1:
         if self.ui == NULL:
@@ -513,6 +727,7 @@ cdef class Context(_GenContext):
         self.ui = NULL
         self._sw = NULL
         self._in_frame = False
+        self._frame_done()
 
     def close(self):
         """Frees the context. Later calls raise RuntimeError."""
@@ -559,7 +774,7 @@ cdef class Context(_GenContext):
         self._in_frame = False
         self._paint_error = None
         cui_end_frame(self.ui)
-        self._keep = []
+        self._frame_done()
         self._have_draw = True
         self._raise_paint_error()
 
@@ -701,6 +916,7 @@ cdef class App:
             if self._ui is not None:
                 self._ui.ui = NULL
                 self._ui._in_frame = False
+                self._ui._frame_done()
             cui_app_destroy(self.app)
             self.app = NULL
 
@@ -738,7 +954,7 @@ cdef class App:
         cdef cbool ok
         with nogil:
             ok = cui_app_frame(self.app)
-        ctx._keep = []
+        ctx._frame_done()
         ctx._in_frame = ok
         ctx._raise_paint_error()
         return ok

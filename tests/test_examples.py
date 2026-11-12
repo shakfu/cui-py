@@ -59,10 +59,28 @@ def test_todo_add_and_save(ctx: cui.Context, tmp_path: Path) -> None:
 
 
 def test_showcase_pages(ctx: cui.Context) -> None:
-    app = load("showcase").Showcase()
-    for page in range(4):
+    mod = load("showcase")
+    app = mod.Showcase()
+    for page in range(len(mod.PAGES)):
         app.page = page
         run(ctx, app.build, 3)
     app.dialog_open = True
     app.page = 0
     run(ctx, app.build, 3)
+
+
+def test_showcase_console_commands(ctx: cui.Context) -> None:
+    app = load("showcase").Showcase()
+    app.page = 4
+    before = len(app.log)
+    for line in ["help", "echo hi", "log from terminal", "colors", "date", "bogus"]:
+        app.run_command(line)
+    assert app.log[-1].text == "from terminal"
+    assert len(app.log) == before + 1
+    app.run_command("worker")
+    assert app.worker_on
+    run(ctx, app.build, 3)
+    app.run_command("worker")
+    assert not app.worker_on
+    app.run_command("clear")
+    assert len(app.term) == 1

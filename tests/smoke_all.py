@@ -45,6 +45,14 @@ def value(ann: str, tag: str) -> Any:
         return tag
     if ann == "TextBuffer":
         return cui.TextBuffer(64, "abc")
+    if ann == "LogBuffer":
+        log = cui.LogBuffer(16, 1024)
+        log.append("abc", cui.LOG_WARN)
+        return log
+    if ann == "TerminalBuffer":
+        term = cui.TerminalBuffer(16, 1024)
+        term.write("\x1b[32mabc\x1b[0m\n")
+        return term
     if ann in VALUES:
         return VALUES[ann]
     if ann.startswith("Sequence[") and ann[9:-1] in VALUES:

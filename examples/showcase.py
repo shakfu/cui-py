@@ -1,4 +1,4 @@
-"""A tour of the binding: forms, charts, a node graph and a live Markdown editor.
+"""A tour of the binding: forms, charts, a node graph, a Markdown editor and a console.
 
 Run `python examples/showcase.py`, or `--png DIR` to save each page headless.
 """
@@ -9,6 +9,8 @@ import argparse
 import datetime
 import math
 import random
+import threading
+import time
 from pathlib import Path
 
 import cui
@@ -18,7 +20,26 @@ PAGES = [
     ("Charts", cui.ICON_CHART_LINE),
     ("Node graph", cui.ICON_GIT_BRANCH),
     ("Editor", cui.ICON_CODE),
+    ("Console", cui.ICON_TERMINAL),
 ]
+
+WORK = [
+    (cui.LOG_DEBUG, "cache hit for {}"),
+    (cui.LOG_INFO, "rendered {} in 4 ms"),
+    (cui.LOG_INFO, "request {} done"),
+    (cui.LOG_WARN, "slow query on {}"),
+    (cui.LOG_ERROR, "retrying {} after timeout"),
+]
+
+HELP = """\x1b[1mcommands\x1b[0m
+  help          this list
+  echo TEXT     print TEXT
+  log TEXT      append TEXT to the log above
+  colors        the 16 ANSI colors
+  date          today's date
+  worker        start or stop the background logger
+  clear         clear this terminal (or Ctrl+L)
+"""
 
 MARKDOWN = """# Release notes
 
@@ -76,6 +97,16 @@ class Showcase:
         # Editor
         self.doc = cui.TextBuffer(8192, MARKDOWN)
         self.ratio = 0.5
+        # Console: a log that a background thread writes, and a terminal
+        self.log = cui.LogBuffer(2000, 256 * 1024)
+        for i, (level, msg) in enumerate(WORK):
+            self.log.append(msg.format(f"job-{i}"), level, time=i * 0.25)
+        self.term = cui.TerminalBuffer()
+        self.term.write(
+            "\x1b[36mcui-py\x1b[0m terminal. Type \x1b[1mhelp\x1b[0m and press Enter.\n"
+        )
+        self.worker: threading.Thread | None = None
+        self.worker_on = False
 
     # ---- shell ----
 
@@ -98,7 +129,14 @@ class Showcase:
                     ui.set_theme(cui.THEME_DARK if self.dark else cui.THEME_LIGHT)
             with ui.column(width=cui.FILL, height=cui.FILL, pad=24, gap=16):
                 ui.heading(PAGES[self.page][0], 2)
-                page = [self.controls, self.charts, self.graph, self.editor][self.page]
+                pages = [
+                    self.controls,
+                    self.charts,
+                    self.graph,
+                    self.editor,
+                    self.console,
+                ]
+                page = pages[self.page]
                 if page == self.charts:  # taller than the window
                     with ui.scroll(width=cui.FILL, height=cui.FILL, gap=16):
                         page(ui)
@@ -258,6 +296,62 @@ class Showcase:
             with ui.scroll(width=cui.FILL, height=cui.FILL, pad=16):
                 ui.markdown("doc-view", str(self.doc), width=cui.FILL)
         self.ratio = s.ratio
+
+    def console(self, ui: cui.Context) -> None:
+        with ui.row(gap=8, align=cui.ALIGN_CENTER):
+            changed, on = ui.switch("Background logger", self.worker_on)
+            if changed:
+                self.toggle_worker(on)
+            ui.badge(f"{self.log.total} lines", tone=cui.TONE_NEUTRAL)
+        ui.log_view("log", self.log, height=260, timestamps=True)
+        r = ui.terminal("term", self.term, height=-1)
+        if r.command is not None:
+            self.run_command(r.command.strip())
+        if self.worker_on:
+            ui.request_wakeup(0.1)  # CUI cannot be woken from another thread
+
+    def toggle_worker(self, on: bool) -> None:
+        self.worker_on = on
+        if on and self.worker is None:
+            self.worker = threading.Thread(target=self.work, daemon=True)
+            self.worker.start()
+
+    def work(self) -> None:
+        rng = random.Random()
+        n = 0
+        while self.worker_on:
+            level, msg = rng.choice(WORK)
+            self.log.append(msg.format(f"job-{n}"), level)
+            n += 1
+            time.sleep(rng.uniform(0.05, 0.4))
+        self.worker = None
+
+    def run_command(self, line: str) -> None:
+        name, _, arg = line.partition(" ")
+        out = self.term.write
+        if name == "":
+            return
+        if name == "help":
+            out(HELP)
+        elif name == "echo":
+            out(arg + "\n")
+        elif name == "log":
+            self.log.append(arg or "(empty)", cui.LOG_INFO)
+            out("\x1b[32mlogged\x1b[0m\n")
+        elif name == "colors":
+            out("".join(f"\x1b[{30 + i}m color {i} " for i in range(8)) + "\x1b[0m\n")
+            out(
+                "".join(f"\x1b[{90 + i}m color {8 + i}" for i in range(8)) + "\x1b[0m\n"
+            )
+        elif name == "date":
+            out(f"{datetime.date.today():%A %d %B %Y}\n")
+        elif name == "worker":
+            self.toggle_worker(not self.worker_on)
+            out(f"background logger {'on' if self.worker_on else 'off'}\n")
+        elif name == "clear":
+            self.term.clear()
+        else:
+            out(f"\x1b[31munknown command:\x1b[0m {name}. Try help.\n")
 
 
 def save_pages(out: Path) -> None:

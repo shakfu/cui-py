@@ -569,6 +569,7 @@ StackTraceResult = _record("StackTraceResult", ['clicked'])
 SwipeAction = _record("SwipeAction", ['icon', 'label', 'tone'])
 TabBarItem = _record("TabBarItem", ['icon', 'label', 'badge'])
 TableColumn = _record("TableColumn", ['title', 'width', 'align', 'sortable'])
+TerminalResult = _record("TerminalResult", ['command', 'interrupt'])
 TestExplorerResult = _record("TestExplorerResult", ['selected', 'activated', 'run', 'run_all', 'passed', 'failed', 'skipped', 'total'])
 TestItem = _record("TestItem", ['name', 'depth', 'status', 'duration', 'message'])
 TextMetrics = _record("TextMetrics", ['width', 'height', 'ascent', 'descent', 'line_height'])
@@ -1373,6 +1374,12 @@ cdef object _from_cui_schedule_result(cui_schedule_result v):
 cdef object _from_cui_stack_trace_result(cui_stack_trace_result v):
     return StackTraceResult(
         v.clicked,
+    )
+
+cdef object _from_cui_terminal_result(cui_terminal_result v):
+    return TerminalResult(
+        _str_or_none(v.command),
+        v.interrupt,
     )
 
 cdef object _from_cui_test_explorer_result(cui_test_explorer_result v):
@@ -7317,6 +7324,47 @@ section that does not fold."""
         c_components = <int>c_value.n
         cdef cbool r = cui_prop_vec_ex(self.ui, c_label, <float *>c_value.ptr, c_components, &c_opts)
         return (r, c_value.tolist())
+
+    def log_view(self, str id not None, LogBuffer buf not None, *, width=None, height=None, timestamps=None, no_toolbar=None, size=None):
+        """Toolbar: level filters, a search field that filters and highlights,
+Follow (keeps the newest line in view; scrolling up turns it off, reaching
+the bottom turns it back on), Copy (selected lines, or all shown) and Clear.
+Click a line to select it, Shift+click for a range; with the list focused,
+arrows move, Shift+arrows extend, Ctrl+A selects all, Ctrl+C copies, Esc
+clears the selection, End follows again."""
+        self._need_frame()
+        cdef const char * c_id
+        cdef LogBuffer c_buf
+        cdef cui_log_view_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_buf = buf
+        buf._pin()
+        self._pinned.append(buf)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if width is not None: c_opts.width = _to_cui_size(width)
+        if height is not None: c_opts.height = <float>height
+        if timestamps is not None: c_opts.timestamps = <cbool>bool(timestamps)
+        if no_toolbar is not None: c_opts.no_toolbar = <cbool>bool(no_toolbar)
+        if size is not None: c_opts.size = <float>size
+        cui_log_view_ex(self.ui, c_id, &c_buf.buf, &c_opts)
+
+    def terminal(self, str id not None, TerminalBuffer t not None, *, width=None, height=None, size=None, prompt=None, no_input=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef TerminalBuffer c_t
+        cdef cui_terminal_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_t = t
+        t._pin()
+        self._pinned.append(t)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if width is not None: c_opts.width = _to_cui_size(width)
+        if height is not None: c_opts.height = <float>height
+        if size is not None: c_opts.size = <float>size
+        if prompt is not None: c_opts.prompt = _cstr(self._keep, prompt)
+        if no_input is not None: c_opts.no_input = <cbool>bool(no_input)
+        cdef cui_terminal_result r = cui_terminal_ex(self.ui, c_id, &c_t.buf, &c_opts)
+        return _from_cui_terminal_result(r)
 
     def emoji_font_load_file(self, str path not None):
         """---- Emoji ----

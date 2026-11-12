@@ -22,7 +22,7 @@ def frame(ui: cui.Context) -> None:
 cui.App("Hello", 420, 300).run(frame)
 ```
 
-`examples/` has `hello.py`, `todo.py` (a port of CUI's tutorial app), `dashboard.py` and `showcase.py` (forms, charts, a node graph and a live Markdown editor; `--png DIR` saves each page headless).
+`examples/` has `hello.py`, `todo.py` (a port of CUI's tutorial app), `dashboard.py` and `showcase.py` (forms, charts, a node graph, a live Markdown editor and a console; `--png DIR` saves each page headless).
 
 ## Install
 
@@ -44,6 +44,19 @@ make test
   ```
 
 - **Text fields.** A text field edits a `cui.TextBuffer(capacity, value)` in place. Capacity counts bytes, including the trailing NUL, as in C.
+- **Log and terminal.** `ui.log_view` reads a `cui.LogBuffer` and `ui.terminal` a `cui.TerminalBuffer`. Both are rings that drop the oldest lines when full, and any thread may write to them:
+
+  ```python
+  log = cui.LogBuffer(lines=4096)
+  log.append("disk almost full", cui.LOG_WARN)    # from any thread
+  ui.log_view("log", log, timestamps=True)
+
+  r = ui.terminal("term", term)
+  if r.command is not None:
+      term.write(f"\x1b[32mran\x1b[0m {r.command}\n")
+  ```
+
+  A write made after the view in the same frame shows from the next frame. CUI cannot be woken from another thread, so call `ui.request_wakeup(seconds)` while a thread is writing.
 - **Lists.** A list of strings or floats replaces a C array and its count. A list of records replaces an array of structs. Each record can be a namedtuple (`cui.VizItem(label="a", value=3)`), a tuple, or a dict. Missing fields are zero.
 - **Containers.** A begin/end pair is a context manager. When `begin` can decline, as a closed dialog does, the scope is falsy and `end` is skipped:
 
@@ -89,7 +102,7 @@ The vendored CUI carries one patch, for state shared by two component types with
 
 ## Coverage
 
-The generator wraps 370 entries: 353 Context methods, including 48 scopes, and 17 module functions. Another 28 functions are wrapped by hand. [docs/dev/coverage.md](docs/dev/coverage.md) lists the 40 functions not wrapped yet and why, and the options that have no keyword argument.
+The generator wraps 372 entries: 355 Context methods, including 48 scopes, and 17 module functions. Another 35 functions are wrapped by hand. [docs/dev/coverage.md](docs/dev/coverage.md) lists the 27 functions not wrapped yet and why, and the options that have no keyword argument.
 
 ## Development
 

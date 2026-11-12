@@ -77,6 +77,8 @@ INOUT_ARRAYS = {
 
 # Scalar pointers followed by a count that are still one value.
 SCALAR_PTRS = {("cui_pagination", "page")}
+# Caller-owned buffers wrapped by a hand-written class in _core.pyx.
+OWNED = {"cui_log_buffer": "LogBuffer", "cui_terminal_buffer": "TerminalBuffer"}
 
 # Wrapped by hand in _core.pyx (validation or callbacks the generator cannot express).
 MANUAL = {
@@ -109,6 +111,14 @@ MANUAL = {
     "cui_sw_iface",
     "cui_sw_render",
     "cui_write_png",
+    # LogBuffer and TerminalBuffer methods
+    "cui_log_init",
+    "cui_log_append_text",
+    "cui_log_clear",
+    "cui_log_get",
+    "cui_terminal_init",
+    "cui_terminal_write",
+    "cui_terminal_clear",
 }
 
 # Not exposed: function -> reason.
@@ -810,6 +820,9 @@ class Planner:
                     plans[i + 1] = P("cap", names[i + 1], cy(args[i + 1].type))
                     continue
                 raise Unsupported(f"char *{n} without a size_t capacity")
+            if rec_p in OWNED:
+                plans[i] = P("owned", n, rec=OWNED[rec_p])
+                continue
             if pointee and (fname, n) in INOUT_ARRAYS:
                 if not is_scalar(pointee):
                     raise Unsupported(f"array {n}")
@@ -997,6 +1010,9 @@ class Gen:
             elif p.kind == "buf":
                 pos.append(f"TextBuffer {pn} not None")
                 spos.append(f"{pn}: TextBuffer")
+            elif p.kind == "owned":
+                pos.append(f"{p.rec} {pn} not None")
+                spos.append(f"{pn}: {p.rec}")
             elif p.kind == "strlist":
                 pos.append(pn)
                 spos.append(f"{pn}: Sequence[str]")
@@ -1040,6 +1056,8 @@ class Gen:
                 continue
             if p.kind == "buf":
                 out.append(("TextBuffer", "b_" + p.name))
+            elif p.kind == "owned":
+                out.append((p.rec, p.v))
             elif p.kind == "grow":
                 out.append(("_Mem" if p.rec else "_ScalarArray", p.v))
             elif p.kind in STORAGE:
@@ -1070,6 +1088,11 @@ class Gen:
             elif p.kind == "buf":
                 out.append(f"{T}b_{p.name} = {pn}")
                 out.append(f"{keep}.append({pn})")
+            elif p.kind == "owned":
+                # pinned: the paint reads the buffer, so writes until then are queued
+                out.append(f"{v} = {pn}")
+                out.append(f"{pn}._pin()")
+                out.append(f"self._pinned.append({pn})")
             elif p.kind == "strlist":
                 out += [f"{v} = _StrArray({pn})", f"{keep}.append({v})"]
             elif p.kind == "floatlist":
@@ -1154,6 +1177,8 @@ class Gen:
                 out.append(f"<{p.rec or p.ctype} *>{v}.ptr")
             elif p.kind == "buf":
                 out.append(f"{T}b_{p.name}.data")
+            elif p.kind == "owned":
+                out.append(f"&{v}.buf")
             elif p.kind == "cap":
                 buf = next(q for q in plans if q.kind == "buf")
                 out.append(f"{T}b_{buf.name}.cap")
@@ -1678,7 +1703,21 @@ def main() -> None:
     (OUT / "_core.pyi").write_text("\n".join(stub))
 
     # coverage report
-    total = len(m.functions) + len([1 for n, r in m.skipped_decls if r == "variadic"])
+    variadic = sorted(n for n, r in m.skipped_decls if r == "variadic")
+    # each has a plain variant that takes a ready string
+    plain = {
+        "cui_textf": "text",
+        "cui_table_cell_textf": "table_cell_text",
+        "cui_log_append": "LogBuffer.append",
+        "cui_terminal_printf": "TerminalBuffer.write",
+    }
+    excluded = dict(EXCLUDED)
+    for n in variadic:
+        alt = plain.get(n)
+        excluded[n] = "printf-style; format in Python" + (
+            f" and call `{alt}`" if alt else ""
+        )
+    total = len(m.functions) + len(variadic)
     rep = [
         "# Binding coverage",
         "",
@@ -1687,8 +1726,8 @@ def main() -> None:
         f"- CUI functions declared: {total}",
         f"- Wrapped by the generator: {len(g.wrapped)} entries (scopes count once per begin/end pair)",
         f"- Wrapped by hand in `_core.pyx`: {len(MANUAL & set(fns))}",
-        f"- Not exposed on purpose: {len(EXCLUDED)}",
-        f"- Not wrapped yet: {len(g.skipped) + len([1 for n, r in m.skipped_decls if r == 'variadic'])}",
+        f"- Not exposed on purpose: {len(excluded)}",
+        f"- Not wrapped yet: {len(g.skipped)}",
         "",
         "## Not wrapped yet",
         "",
@@ -1697,11 +1736,8 @@ def main() -> None:
     ]
     for n, r in sorted(g.skipped):
         rep.append(f"| `{n}` | {r} |")
-    for n, r in m.skipped_decls:
-        if r == "variadic":
-            rep.append(f"| `{n}` | variadic; format the string in Python |")
     rep += ["", "## Not exposed on purpose", "", "| C function | Reason |", "|-|-|"]
-    rep += [f"| `{n}` | {r} |" for n, r in sorted(EXCLUDED.items())]
+    rep += [f"| `{n}` | {r} |" for n, r in sorted(excluded.items())]
     rep += [
         "",
         "## Options without a keyword argument",
