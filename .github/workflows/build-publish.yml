@@ -22,7 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-*"
+  # wheel.py-api builds one cp310-abi3 wheel; later versions reuse and test it.
+  CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
   CIBW_SKIP: "*-musllinux_* pp*"
   CIBW_TEST_REQUIRES: pytest
   CIBW_TEST_COMMAND: pytest {project}/tests -v
@@ -144,6 +145,13 @@ jobs:
           echo ""
           echo "=== Wheel count: $(ls dist/*.whl 2>/dev/null | wc -l) ==="
           echo "=== Sdist count: $(ls dist/*.tar.gz 2>/dev/null | wc -l) ==="
+
+      - name: Check wheels are abi3
+        run: |
+          if ls dist/*.whl | grep -v -- '-abi3-'; then
+            echo "::error::non-abi3 wheels found"; exit 1
+          fi
+          pipx run abi3audit --strict --report dist/*.whl
 
       - name: Upload combined artifacts
         uses: actions/upload-artifact@v7

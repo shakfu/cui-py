@@ -24,6 +24,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Cython",
     "Typing :: Typed",
 ]
@@ -38,11 +39,14 @@ dev = [
 ]
 
 [build-system]
-requires = ["scikit-build-core>=1.1.2", "cython"]
+# Cython 3.1 is the first release with Limited API support.
+requires = ["scikit-build-core>=1.1.2", "cython>=3.1"]
 build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
 wheel.packages = ["src/cui"]
+# One cp310-abi3 wheel per platform covers CPython 3.10+.
+wheel.py-api = "cp310"
 install.components = ["python"]
 # The generator and its stub templates are dev tools; thirdparty/ builds the extension.
 sdist.include = ["thirdparty/cui"]

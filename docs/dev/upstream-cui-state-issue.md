@@ -8,20 +8,17 @@ Not filed yet. cui-py carries the fix as `thirdparty/patches/cui-state-reset.pat
 
 **Version:** 1.4.0 (5a9c12b), macOS arm64, Apple clang.
 
-`cui_state(ui, id, size)` returns the existing entry for `id` and grows it to
-`size`. It never checks that the caller is the same kind of component. If a
-second component type uses the same id, it reads the first one's bytes as its
-own struct, pointers included. In the repro, `cui__ne_dtor` frees bytes that
-`menu_bar` left where `cui__ne_state.set[]` keeps its arrays.
+`cui_state(ui, id, size)` returns the existing entry for `id` and grows it to `size`. It never checks that the caller is the same kind of component. If a second component type uses the same id, it reads the first one's bytes as its own struct, pointers included. In the repro, `cui__ne_dtor` frees bytes that `menu_bar` left where `cui__ne_state.set[]` keeps its arrays.
 
-`docs/architecture.md` calls duplicate ids a caller bug. Here the result is
-memory corruption rather than a visual glitch, and the trigger is easy to hit:
+`docs/architecture.md` calls duplicate ids a caller bug. Here the result is memory corruption rather than a visual glitch, and the trigger is easy to hit:
 
 - ids come from labels, so two components with the same label collide;
+
 - the entry lives about 300 frames, so the two calls need not be in one frame;
+
 - reusing a label after switching views, say, is enough.
 
-### Reproduction
+## Reproduction
 
 ```c
 /* cc -fsanitize=address -I include repro.c libcui.a -framework Cocoa -framework Metal -framework QuartzCore */
@@ -49,7 +46,7 @@ int main(void) {
 }
 ```
 
-```
+```text
 ERROR: AddressSanitizer: SEGV on unknown address 0xfffffffefffffff1
     #2 cui__default_free cui_core.c:12
     #3 cui__free cui_core.c:24
@@ -60,14 +57,11 @@ ERROR: AddressSanitizer: SEGV on unknown address 0xfffffffefffffff1
 
 Without ASan, macOS aborts with "pointer being freed was not allocated".
 
-The reverse order is also unsafe. `menu_bar` then writes its 200 bytes over
-the node editor's 368-byte state, and the editor's destructor frees what it
-wrote.
+The reverse order is also unsafe. `menu_bar` then writes its 200 bytes over the node editor's 368-byte state, and the editor's destructor frees what it wrote.
 
 ### Proposed fix
 
-Treat a request at a different size as a new owner. Free the old data with
-its destructor and start from zeroed memory:
+Treat a request at a different size as a new owner. Free the old data with its destructor and start from zeroed memory:
 
 ```c
 void *cui_state(cui_ctx *ui, cui_id id, size_t size) {
@@ -76,27 +70,22 @@ void *cui_state(cui_ctx *ui, cui_id id, size_t size) {
     ...
 ```
 
-`cui__state_drop_data` also replaces the free sequence in `cui__state_gc`. The
-full patch is attached (about 20 lines, `src/cui_core.c` only).
+`cui__state_drop_data` also replaces the free sequence in `cui__state_gc`. The full patch is attached (about 20 lines, `src/cui_core.c` only).
 
 This assumes each id has one state size. I checked that two ways:
 
 - every `cui_state` call in `src/` passes a constant size;
-- logging size mismatches over the cui-py test suite found none. That suite
-  calls each of 352 wrapped functions at least once.
 
-The hover-fade helpers (`cui__hover_fade`, `cui__state_lazy`) ask for smaller
-sizes, but no id they use also holds a component struct.
+- logging size mismatches over the cui-py test suite found none. That suite calls each of 352 wrapped functions at least once.
+
+The hover-fade helpers (`cui__hover_fade`, `cui__state_lazy`) ask for smaller sizes, but no id they use also holds a component struct.
 
 Known limits:
 
-- Size is a proxy for type. Two types whose states have the same size still
-  collide. A type tag argument would close that gap, at the cost of an API change.
-- Two types alternating on one id within one frame now reset each other every
-  frame. They lose state but no longer corrupt memory.
-- A component that keeps a pointer to its state across a child scope would
-  see it freed if a child of another type resolves to the same id. I found no
-  case where this happens (inference: scopes push an id, so a child's id differs).
+- Size is a proxy for type. Two types whose states have the same size still collide. A type tag argument would close that gap, at the cost of an API change.
 
-A cheaper alternative is a debug-build assertion on a size mismatch. It
-reports the caller bug but leaves release builds unsafe.
+- Two types alternating on one id within one frame now reset each other every frame. They lose state but no longer corrupt memory.
+
+- A component that keeps a pointer to its state across a child scope would see it freed if a child of another type resolves to the same id. I found no case where this happens (inference: scopes push an id, so a child's id differs).
+
+A cheaper alternative is a debug-build assertion on a size mismatch. It reports the caller bug but leaves release builds unsafe.

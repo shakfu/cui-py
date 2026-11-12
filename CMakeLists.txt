@@ -10,7 +10,7 @@ set(CUI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(CUI_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 add_subdirectory(thirdparty/cui EXCLUDE_FROM_ALL)
 
-find_package(Python REQUIRED COMPONENTS Interpreter Development.Module)
+find_package(Python REQUIRED COMPONENTS Interpreter Development.Module ${SKBUILD_SABI_COMPONENT})
 
 set(PYSRC "${CMAKE_CURRENT_SOURCE_DIR}/src/cui")
 add_custom_command(
@@ -20,7 +20,11 @@ add_custom_command(
     DEPENDS "${PYSRC}/_core.pyx" "${PYSRC}/_gen.pxi" "${PYSRC}/_cui.pxd"
 )
 
-python_add_library(_core MODULE _core.c WITH_SOABI)
+# Stable ABI per wheel.py-api; empty on builds that cannot use it (free-threaded).
+if(SKBUILD_SABI_VERSION)
+    set(CUI_SABI USE_SABI ${SKBUILD_SABI_VERSION})
+endif()
+python_add_library(_core MODULE _core.c WITH_SOABI ${CUI_SABI})
 target_link_libraries(_core PRIVATE cui)
 
 # Only the extension: CUI's own install rules would add libcui.a and its headers.
