@@ -26,6 +26,8 @@ env:
   CIBW_SKIP: "*-musllinux_* pp*"
   CIBW_TEST_REQUIRES: pytest
   CIBW_TEST_COMMAND: pytest {project}/tests -v
+  # CUI's Linux backend needs the X11 headers; libX11 is on the manylinux allowlist.
+  CIBW_BEFORE_ALL_LINUX: "dnf install -y libX11-devel || yum install -y libX11-devel"
 
 jobs:
   build-sdist:

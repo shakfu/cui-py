@@ -1,0 +1,4 @@
+CUI v1.4.0 (5a9c12b), https://github.com/yappologistic/CUI
+Copied: include src third_party cmake CMakeLists.txt LICENSE THIRD_PARTY.md assets/fonts/LICENSE-*.txt
+Patched: ../patches/cui-state-reset.patch (cui_state resets an entry asked for at a new size).
+Reapply after updating: git apply --directory=thirdparty/cui thirdparty/patches/cui-state-reset.patch

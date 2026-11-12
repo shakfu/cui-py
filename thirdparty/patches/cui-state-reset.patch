@@ -1,0 +1,39 @@
+--- a/src/cui_core.c	2026-11-12 06:19:11
++++ b/src/cui_core.c	2026-11-12 06:19:11
+@@ -323,6 +323,16 @@
+     for (int i = ui->state_buckets[b]; i >= 0; i = ui->states[i].next)
+         if (ui->states[i].id == id) return &ui->states[i];
+     return NULL;
++}
++
++/* Free what an entry's data owns and the data itself. */
++static void cui__state_drop_data(cui_ctx *ui, cui_state_entry *e) {
++    if (e->dtor && e->data) e->dtor(ui, e->data);
++    if (ui->edit && (void *)ui->edit == e->data) ui->edit = NULL;
++    cui__free(ui, e->data);
++    e->data = NULL;
++    e->size = 0;
++    e->dtor = NULL;
+ }
+ 
+ cui_state_entry *cui__state_entry(cui_ctx *ui, cui_id id) {
+@@ -367,6 +377,9 @@
+ 
+ void *cui_state(cui_ctx *ui, cui_id id, size_t size) {
+     cui_state_entry *e = cui__state_entry(ui, id);
++    /* cui-py patch: a different size means a different component owns this id now;
++     * reading the old bytes as the new type corrupts memory, so start from zero */
++    if (e->data && e->size != size) cui__state_drop_data(ui, e);
+     if (e->size < size) {
+         e->data = cui__realloc(ui, e->data, size);
+         memset((char *)e->data + e->size, 0, size - e->size);
+@@ -405,8 +418,7 @@
+         int *link = &ui->state_buckets[b];
+         while (*link >= 0 && *link != i) link = &ui->states[*link].next;
+         if (*link == i) *link = e->next;
+-        if (e->dtor && e->data) e->dtor(ui, e->data);
+-        cui__free(ui, e->data);
++        cui__state_drop_data(ui, e);
+         memset(e, 0, sizeof *e);
+         e->next = ui->state_free;
+         ui->state_free = i;

@@ -1,15 +1,17 @@
+"""Python bindings for CUI, an immediate-mode UI library in C.
+
+import cui
+
+app = cui.App("Hello", 420, 300)
+for ui in app.frames():
+    with ui.column(pad=32, gap=16):
+        ui.heading("Hello, CUI", 2)
+        if ui.button("Click me", variant=cui.BUTTON_PRIMARY):
+            print("clicked")
 """
-cui - Cython bindings for the cui UI framework.
 
-Example usage:
-    >>> import cui
-    >>> cui.add(1, 2)
-    3
-    >>> cui.greet("World")
-    'Hello, World!'
-"""
+from cui._core import *
+from cui._core import VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH
 
-from cui._core import add, greet
-
-__all__ = ["add", "greet"]
 __version__ = "0.1.0"
+CUI_VERSION = f"{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}"

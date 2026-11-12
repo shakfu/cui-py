@@ -6,7 +6,8 @@
 
 .PHONY: all sync build rebuild test lint lint-check format format-check \
         typecheck qa clean distclean wheel sdist dist check publish-test \
-        publish upgrade coverage coverage-html docs release help
+        publish upgrade coverage coverage-html docs release help \
+        gen test-window test-asan
 
 # Default target
 all: build
@@ -26,25 +27,49 @@ rebuild: build
 test:
 	@uv run pytest tests/ -v
 
+# Regenerate src/cui/_cui.pxd, _gen.pxi, _core.pyi and docs/dev/coverage.md
+# from thirdparty/cui/include. Needs libclang (fetched by uv) and clang.
+gen:
+	@uv run --no-project --with libclang python -I tools/gen_bindings.py
+
+# Run the tests that open a (hidden) window as well
+test-window:
+	@CUI_WINDOW_TESTS=1 uv run pytest tests/ -v
+
+# Build with AddressSanitizer, run the tests and the smoke script, then rebuild
+# normally. macOS needs the runtime preloaded; the smoke script runs directly
+# because macOS drops DYLD_* variables in pytest's subprocess.
+ASAN_LIB = $(shell clang -print-file-name=libclang_rt.asan_osx_dynamic.dylib)
+test-asan:
+	@CMAKE_ARGS="-DCMAKE_C_FLAGS=-fsanitize=address\ -fno-omit-frame-pointer -DCMAKE_OBJC_FLAGS=-fsanitize=address -DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=address -DCMAKE_BUILD_TYPE=RelWithDebInfo" \
+		uv sync --reinstall-package cui-py
+	@DYLD_INSERT_LIBRARIES=$(ASAN_LIB) ASAN_OPTIONS=detect_stack_use_after_return=1 \
+		.venv/bin/python -m pytest -q -p no:cacheprovider --deselect tests/test_smoke.py::test_every_generated_method --deselect tests/test_state.py; \
+		s=$$?; DYLD_INSERT_LIBRARIES=$(ASAN_LIB) ASAN_OPTIONS=detect_stack_use_after_return=1 \
+		.venv/bin/python tests/smoke_all.py > /dev/null; t=$$?; \
+		DYLD_INSERT_LIBRARIES=$(ASAN_LIB) ASAN_OPTIONS=detect_stack_use_after_return=1 \
+		.venv/bin/python tests/test_state.py || t=1; \
+		uv sync --reinstall-package cui-py; test $$s -eq 0 -a $$t -eq 0
+
 # Lint with ruff (applies fixes)
 lint:
-	@uv run ruff check --fix src/ tests/
+	@uv run ruff check --fix src/ tests/ examples/ tools/
 
 # Lint with ruff (check only, no fixes)
 lint-check:
-	@uv run ruff check src/ tests/
+	@uv run ruff check src/ tests/ examples/ tools/
 
 # Format with ruff
 format:
-	@uv run ruff format src/ tests/
+	@uv run ruff format src/ tests/ examples/ tools/
 
 # Check formatting without modifying files
 format-check:
-	@uv run ruff format --check src/ tests/
+	@uv run ruff format --check src/ tests/ examples/ tools/
 
 # Type check with mypy
 typecheck:
-	@uv run mypy src/cui
+	@uv run mypy src/cui tests/ examples/
 
 # Run a full quality assurance check (non-mutating; mirrors CI)
 qa: lint-check format-check typecheck test
@@ -124,6 +149,9 @@ help:
 	@echo "  build        - Rebuild extension after code changes"
 	@echo "  rebuild      - Alias for build"
 	@echo "  test         - Run tests"
+	@echo "  test-window  - Run tests, including those that open a window"
+	@echo "  test-asan    - Run tests and the smoke script under AddressSanitizer (macOS)"
+	@echo "  gen          - Regenerate the Cython layer from the CUI headers"
 	@echo "  lint         - Lint with ruff (applies fixes)"
 	@echo "  lint-check   - Lint with ruff (check only)"
 	@echo "  format       - Format with ruff"
