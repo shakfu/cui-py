@@ -4,7 +4,7 @@ Cython bindings for [CUI](https://github.com/yappologistic/CUI), an immediate-mo
 
 CUI 1.4.0 is vendored in `thirdparty/cui` and compiled into the extension, so there are no runtime dependencies. Linux needs the X11 development headers to build (`libx11-dev`).
 
-Status: alpha. Tested on macOS (Cocoa, arm64, CPython 3.14). The CI workflows build on Linux and Windows, but those builds have not run yet.
+Status: alpha. Tested on macOS (Cocoa, arm64, CPython 3.14). The CI workflows build macos, Linux and Windows.
 
 ```python
 import cui
@@ -26,8 +26,16 @@ cui.App("Hello", 420, 300).run(frame)
 
 ## Install
 
+The simplest is to juat do:
+
 ```bash
-git clone <this repo> && cd cui-py
+pip install cui-py
+```
+
+or if you want to build from source:
+
+```bash
+git clone https://github.com/shakfu/cui-py && cd cui-py
 uv sync          # builds the extension
 make test
 ```
