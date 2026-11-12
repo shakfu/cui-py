@@ -218,3 +218,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Build, CMake, editor, OS
+*.pyd
+.uv/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store

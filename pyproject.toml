@@ -1,0 +1,54 @@
+[project]
+name = "cui-py"
+version = "0.1.0"
+description = "Cython bindings for the cui UI framework"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Shakeeb Alireza", email = "shakfu@users.noreply.github.com" }
+]
+requires-python = ">=3.10"
+keywords = ["cui", "ui", "cython", "bindings"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Cython",
+    "Typing :: Typed",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.4",
+    "twine>=7.0.0",
+]
+
+[build-system]
+requires = ["scikit-build-core>=1.1.2", "cython"]
+build-backend = "scikit_build_core.build"
+
+[tool.scikit-build]
+wheel.packages = ["src/cui"]
+cmake.args = []
+cmake.define = {}
+cmake.build-type = "Release"
+cmake.source-dir = "."
+sdist.include = []
+sdist.exclude = []
+wheel.exclude = []
+
+[tool.mypy]
+strict = true
+
+[[tool.mypy.overrides]]
+# The compiled extension ships no stubs. Everything else stays checked.
+module = "cui._core"
+ignore_missing_imports = true
+
