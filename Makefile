@@ -4,7 +4,7 @@
 # This Makefile wraps common build commands for convenience.
 # The actual build is handled by scikit-build-core via pyproject.toml
 
-.PHONY: all sync build rebuild test lint lint-check format format-check \
+.PHONY: all sync build build-pty rebuild test lint lint-check format format-check \
         typecheck qa clean distclean wheel sdist dist check publish-test \
         publish upgrade coverage coverage-html docs release help \
         gen test-window test-asan
@@ -16,9 +16,16 @@ all: build
 sync:
 	@uv sync
 
-# Build/rebuild the extension after code changes
+# Build/rebuild the extension after code changes. Without build isolation the
+# build dir stays valid, so only changed files recompile.
+BUILD_DEPS = uv sync --no-install-project
+REBUILD = uv sync --no-build-isolation-package cui-py --reinstall-package cui-py
 build:
-	@uv sync --reinstall-package cui-py
+	@$(BUILD_DEPS) && $(REBUILD)
+
+# Build with cui.Pty (CUI_PY_PTY). Needs Zig 0.17 on PATH.
+build-pty:
+	@$(BUILD_DEPS) && SKBUILD_BUILD_DIR="build/pty-{wheel_tag}" CMAKE_ARGS="-DCUI_PY_PTY=ON" $(REBUILD)
 
 # Alias for build
 rebuild: build
@@ -41,15 +48,15 @@ test-window:
 # because macOS drops DYLD_* variables in pytest's subprocess.
 ASAN_LIB = $(shell clang -print-file-name=libclang_rt.asan_osx_dynamic.dylib)
 test-asan:
-	@CMAKE_ARGS="-DCMAKE_C_FLAGS=-fsanitize=address\ -fno-omit-frame-pointer -DCMAKE_OBJC_FLAGS=-fsanitize=address -DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=address -DCMAKE_BUILD_TYPE=RelWithDebInfo" \
-		uv sync --reinstall-package cui-py
+	@$(BUILD_DEPS) && SKBUILD_BUILD_DIR="build/asan-{wheel_tag}" CMAKE_ARGS="-DCMAKE_C_FLAGS=-fsanitize=address\ -fno-omit-frame-pointer -DCMAKE_OBJC_FLAGS=-fsanitize=address -DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=address -DCMAKE_BUILD_TYPE=RelWithDebInfo" \
+		$(REBUILD)
 	@DYLD_INSERT_LIBRARIES=$(ASAN_LIB) ASAN_OPTIONS=detect_stack_use_after_return=1 \
 		.venv/bin/python -m pytest -q -p no:cacheprovider --deselect tests/test_smoke.py::test_every_generated_method --deselect tests/test_state.py; \
 		s=$$?; DYLD_INSERT_LIBRARIES=$(ASAN_LIB) ASAN_OPTIONS=detect_stack_use_after_return=1 \
 		.venv/bin/python tests/smoke_all.py > /dev/null; t=$$?; \
 		DYLD_INSERT_LIBRARIES=$(ASAN_LIB) ASAN_OPTIONS=detect_stack_use_after_return=1 \
 		.venv/bin/python tests/test_state.py || t=1; \
-		uv sync --reinstall-package cui-py; test $$s -eq 0 -a $$t -eq 0
+		$(REBUILD); test $$s -eq 0 -a $$t -eq 0
 
 # Lint with ruff (applies fixes)
 lint:
@@ -147,6 +154,7 @@ help:
 	@echo "  all          - Build/rebuild the extension (default)"
 	@echo "  sync         - Sync environment (initial setup)"
 	@echo "  build        - Rebuild extension after code changes"
+	@echo "  build-pty    - Rebuild with cui.Pty (needs Zig 0.17)"
 	@echo "  rebuild      - Alias for build"
 	@echo "  test         - Run tests"
 	@echo "  test-window  - Run tests, including those that open a window"

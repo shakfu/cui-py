@@ -2,8 +2,11 @@
 
 import importlib.util
 import sys
+import time
 from pathlib import Path
 from types import ModuleType
+
+import pytest
 
 import cui
 
@@ -84,3 +87,17 @@ def test_showcase_console_commands(ctx: cui.Context) -> None:
     assert not app.worker_on
     app.run_command("clear")
     assert len(app.term) == 1
+
+
+@pytest.mark.skipif(not cui.PTY_AVAILABLE, reason="built without CUI_PY_PTY")
+def test_term(ctx: cui.Context) -> None:
+    mod = load("term")
+    mod.load_fonts(ctx)
+    term = mod.Term(["/bin/sh", "-c", "echo from term"])
+    with term.pty:
+        for _ in range(500):
+            run(ctx, term.build)
+            if term.pty.exited:
+                break
+            time.sleep(0.01)
+        assert term.pty.screen() == "from term"

@@ -13,8 +13,11 @@ what it keeps across frames, so nothing passed in needs to live longer.
 from libc.stdlib cimport calloc, free, malloc
 from libc.string cimport memchr, memcpy, memset
 from cpython.ref cimport PyObject
+from cpython.pythread cimport PyThread_get_thread_ident
+from libc.errno cimport errno
 
 import datetime as _datetime
+import os as _os
 import sys as _sys
 from collections import deque as _deque
 from collections import namedtuple as _namedtuple
@@ -585,6 +588,147 @@ cdef class TerminalBuffer(_Pinned):
 
 
 # ---------------------------------------------------------------------------
+# Pty
+# ---------------------------------------------------------------------------
+
+
+cdef extern from "cuipy_pty.h" nogil:
+    ctypedef struct cuipy_pty
+    const cbool cuipy_pty_available
+    cuipy_pty *cuipy_pty_open(char *const *argv, const char *cwd, float font_size)
+    void cuipy_pty_frame(cui_ctx *ui, cuipy_pty *p, const char *id)
+    void cuipy_pty_send(cuipy_pty *p, const char *data, size_t n)
+    char *cuipy_pty_screen(cuipy_pty *p, cbool selection)
+    const char *cuipy_pty_title(cuipy_pty *p)
+    cbool cuipy_pty_exited(cuipy_pty *p)
+    int cuipy_pty_exit_code(cuipy_pty *p)
+    void cuipy_pty_close(cuipy_pty *p)
+
+PTY_AVAILABLE = bool(cuipy_pty_available)
+
+
+cdef class Pty(_Pinned):
+    """A child process on a pseudo-terminal, emulated by libghostty-vt, for `ui.pty`.
+
+    `argv` None runs `$SHELL`, else `/bin/sh`. Use it from the thread that made it.
+    The view reads the child's output, so a Pty no view shows stalls a busy child.
+    Needs a build with `CUI_PY_PTY=ON`; see `PTY_AVAILABLE`.
+    """
+    cdef cuipy_pty *p
+    cdef unsigned long _thread
+    cdef bint _closing
+
+    def __init__(self, argv=None, *, cwd=None, float font_size=13.0):
+        if self.p != NULL or self._closing:
+            raise RuntimeError("Pty.__init__ called twice")
+        if not cuipy_pty_available:
+            raise RuntimeError("this cui-py was built without CUI_PY_PTY")
+        if not 6 <= font_size <= 72:
+            raise ValueError("font_size must be 6 to 72")
+        cdef list args = None
+        if argv is not None:
+            if isinstance(argv, (str, bytes)):
+                raise TypeError("argv must be a sequence of strings, not a string")
+            args = [_os.fsencode(a) for a in argv]
+            if not args:
+                raise ValueError("argv must not be empty")
+            for a in args:
+                if b"\0" in a:
+                    raise ValueError("argv cannot contain NUL characters")
+        cdef bytes c_cwd = None if cwd is None else _os.fsencode(cwd)
+        if c_cwd is not None and b"\0" in c_cwd:
+            raise ValueError("cwd cannot contain NUL characters")
+        cdef char **c_argv = NULL
+        cdef Py_ssize_t i
+        if args is not None:
+            c_argv = <char **>calloc(len(args) + 1, sizeof(char *))
+            if c_argv == NULL:
+                raise MemoryError()
+            for i in range(len(args)):
+                c_argv[i] = <char *><bytes>args[i]
+        self.p = cuipy_pty_open(c_argv, NULL if c_cwd is None else <const char *>c_cwd, font_size)
+        cdef int e = errno
+        free(c_argv)
+        if self.p == NULL:
+            raise OSError(e, f"cannot start a pty: {_os.strerror(e)}")
+        self._thread = PyThread_get_thread_ident()
+
+    def __dealloc__(self):
+        if self.p != NULL:
+            cuipy_pty_close(self.p)
+            self.p = NULL
+
+    cdef int _need_open(self) except -1:
+        if self.p == NULL or self._closing:
+            raise RuntimeError("the pty is closed")
+        if PyThread_get_thread_ident() != self._thread:
+            raise RuntimeError("a Pty works only on the thread that made it")
+        return 0
+
+    cdef void _unpin(self) noexcept:
+        self._pins -= 1
+        if not self._pins and self._closing and self.p != NULL:
+            cuipy_pty_close(self.p)
+            self.p = NULL
+
+    def close(self):
+        """Hangs up the child: SIGHUP, then SIGKILL after 0.5 s. Waits for it.
+
+        A view that shows the Pty this frame keeps it until the frame ends.
+        """
+        if self.p == NULL or self._closing:
+            return
+        self._need_open()
+        self._closing = True
+        if not self._pins:
+            cuipy_pty_close(self.p)
+            self.p = NULL
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
+    def write(self, data):
+        """Sends bytes, or a str as UTF-8, to the child as typed. No paste filtering."""
+        self._need_open()
+        cdef bytes b = data.encode("utf-8") if isinstance(data, str) else bytes(data)
+        cuipy_pty_send(self.p, b, len(b))
+
+    def screen(self, bint selection=False):
+        """The visible screen, or the selection, as text with trailing blanks trimmed."""
+        self._need_open()
+        cdef char *s = cuipy_pty_screen(self.p, selection)
+        if s == NULL:
+            return ""
+        try:
+            return (<bytes>s).decode("utf-8", "replace")
+        finally:
+            free(s)
+
+    @property
+    def title(self):
+        """The title the child set (OSC 0 or 2), or ""."""
+        self._need_open()
+        return (<bytes>cuipy_pty_title(self.p)).decode("utf-8", "replace")
+
+    @property
+    def exited(self):
+        """True once the child exited and its output was read."""
+        self._need_open()
+        return cuipy_pty_exited(self.p)
+
+    @property
+    def exit_code(self):
+        """The exit code as a shell reports it (128 + signal), or None while running."""
+        self._need_open()
+        cdef int c = cuipy_pty_exit_code(self.p)
+        return None if c < 0 else c
+
+
+# ---------------------------------------------------------------------------
 # Context
 # ---------------------------------------------------------------------------
 
@@ -804,6 +948,19 @@ cdef class Context(_GenContext):
             r = cui_canvas(self.ui, c_id, w, h, _paint_trampoline, &p, sizeof(PyObject *))
         return CanvasResult(_from_cui_rect(r.rect), r.hovered, r.pressed, r.clicked,
                             _from_cui_vec2(r.mouse))
+
+    def pty(self, str id not None, Pty p not None):
+        """Fills the space given with `p`'s terminal; sends it keys, text, pastes and mouse.
+
+        Takes keyboard focus on its first frame and when clicked. A paste that
+        could run commands asks first.
+        """
+        self._need_frame()
+        p._need_open()
+        cdef const char *c_id = _cstr(self._keep, id)
+        p._pin()
+        self._pinned.append(p)
+        cuipy_pty_frame(self.ui, p.p, c_id)
 
     def image_create(self, int width, int height, bytes rgba not None):
         """A texture from RGBA pixels, `width * height * 4` bytes."""

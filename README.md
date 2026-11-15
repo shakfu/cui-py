@@ -101,6 +101,31 @@ make test
 
 The tests use this.
 
+## Terminal on a pty (optional)
+
+`cui.Pty` runs a child process on a pseudo-terminal, and `ui.pty(id, p)` shows it. [libghostty-vt](https://lib.ghostty.org/vt/) 1.0.0 parses the output. The view code comes from [cui-repl](thirdparty/cui-repl/VENDORED). It is off by default. It builds only on macOS and Linux, and needs [Zig 0.17](https://lib.ghostty.org/vt/installing.html) and CMake 3.19 or later:
+
+```bash
+make build-pty                                           # from a checkout
+pip install cui-py --no-binary cui-py -C cmake.define.CUI_PY_PTY=ON
+```
+
+The first build downloads libghostty-vt (SHA-256 pinned in `CMakeLists.txt`). `cui.PTY_AVAILABLE` says whether the build has it.
+
+```python
+with cui.Pty(["python3", "-q"]) as p:
+    for ui in app.frames():
+        ui.pty("repl", p)
+        if p.exited:
+            break
+```
+
+- The view reads the child's output each frame. A Pty no view shows stalls a child that writes a lot.
+- `p.write()` sends input, and `p.screen()` reads the screen as text.
+- A Pty works only on the thread that made it.
+
+`examples/term.py` is a terminal window.
+
 ## Errors instead of crashes
 
 Misuse that would be undefined behaviour in C raises an exception:
@@ -148,6 +173,7 @@ The output is committed. Run `make gen` after updating `thirdparty/cui`. Hand-wr
 | Target | |
 |-|-|
 | `make build` | rebuild the extension |
+| `make build-pty` | rebuild with `cui.Pty` (needs Zig 0.17) |
 | `make test` | headless tests, including one call to every generated method |
 | `make test-window` | also open a hidden window |
 | `make test-asan` | tests under AddressSanitizer (macOS) |
@@ -155,4 +181,4 @@ The output is committed. Run `make gen` after updating `thirdparty/cui`. Hand-wr
 
 ## License
 
-MIT. The vendored CUI is MIT, with its fonts under OFL (Inter, Geist) and ISC (Lucide). See `thirdparty/cui/LICENSE`, `thirdparty/cui/THIRD_PARTY.md` and `thirdparty/cui/assets/fonts/`.
+MIT. The vendored CUI is MIT, with its fonts under OFL (Inter, Geist) and ISC (Lucide). See `thirdparty/cui/LICENSE`, `thirdparty/cui/THIRD_PARTY.md` and `thirdparty/cui/assets/fonts/`. A `CUI_PY_PTY` build also links cui-repl and libghostty-vt, both MIT. Their licenses go in `cui/licenses/`.

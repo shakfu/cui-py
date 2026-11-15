@@ -31,6 +31,9 @@ classifiers = [
 
 [dependency-groups]
 dev = [
+    # The build requirements, so make build can skip build isolation.
+    "cython>=3.1",
+    "scikit-build-core>=1.1.2",
     "mypy>=2.4.1",
     "pytest>=9.2.0",
     "pytest-cov>=7.1.0",
@@ -48,8 +51,13 @@ wheel.packages = ["src/cui"]
 # One cp310-abi3 wheel per platform covers CPython 3.10+.
 wheel.py-api = "cp310"
 install.components = ["python"]
+# Kept between builds, so a rebuild recompiles only what changed and libghostty-vt
+# is fetched and built once. That needs the Makefile's non-isolated builds: in a new
+# isolated environment scikit-build-core clears the cache. The Makefile gives pty
+# and asan builds their own dirs, since CMake caches options and flags.
+build-dir = "build/{wheel_tag}"
 # The generator and its stub templates are dev tools; thirdparty/ builds the extension.
-sdist.include = ["thirdparty/cui"]
+sdist.include = ["thirdparty/cui", "thirdparty/cui-repl", "csrc"]
 cmake.args = []
 cmake.define = {}
 cmake.build-type = "Release"

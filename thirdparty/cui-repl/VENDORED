@@ -1,0 +1,4 @@
+cui-repl c345608, ~/projects/personal/cui-repl (MIT)
+Copied: src/{pty,session,term_view,boxdraw}.{c,h} src/cuix.h LICENSE
+Rewritten: src/cuix.c reads CUI 1.4.0's cui_internal.h instead of including CUI 1.3.1's cui.c.
+libghostty-vt 1.0.0 is not vendored: CMakeLists.txt fetches it when CUI_PY_PTY is ON.
