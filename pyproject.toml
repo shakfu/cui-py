@@ -10,6 +10,7 @@ license-files = [
     "thirdparty/cui/LICENSE",
     "thirdparty/cui/THIRD_PARTY.md",
     "thirdparty/cui/assets/fonts/LICENSE-*.txt",
+    "thirdparty/cui-repl/LICENSE",
 ]
 authors = [
     { name = "Shakeeb Alireza", email = "shakfu@users.noreply.github.com" }
