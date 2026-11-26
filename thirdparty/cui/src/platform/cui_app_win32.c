@@ -1,6 +1,6 @@
 /* Win32 backend (Windows 7 and later). Per-monitor DPI awareness, WGL
- * OpenGL 3.3 with a GDI software fallback, UTF-16 text input, clipboard,
- * dark title bars and smooth live resizing. */
+ * OpenGL 3.3 with a GDI software fallback, UTF-16 text input with the IME
+ * placed at the caret, clipboard, dark title bars and smooth live resizing. */
 #include "cui_platform.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -12,6 +12,7 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
+#include <imm.h>
 
 #ifndef WM_DPICHANGED
 #define WM_DPICHANGED 0x02E0
@@ -42,9 +43,15 @@ typedef struct {
     float scale;
     bool tracking;
     WCHAR high_surrogate;
+    RECT ime_caret;        /* the focused text field's caret in client pixels, where the IME opens */
+    bool ime_caret_set;
+    int sys_caret_h;       /* height of our hidden system caret, 0 while there is none */
     HCURSOR cursors[CUI_CURSOR_COUNT];
     cui_cursor cursor;
     bool in_size_move;
+    double transition_until;   /* a DWM maximize, minimize or restore animation runs until then */
+    bool swap_fast, vsync;     /* the swap interval is 0 for that animation; vsync as the app asked */
+    PFN_wglSwapIntervalEXT set_swap_interval;
     BITMAPINFO bmi;
     HANDLE timer;          /* timed waits: high resolution where Windows has it (10 1803 and later) */
 } cui__win32;
@@ -212,6 +219,73 @@ static const char *cui__win32_get_clip(void *user) {
     return result;
 }
 
+/* Tells the input method where the caret is: the composition window starts at
+ * the caret and the candidate list opens under the line without covering it.
+ * IMEs differ in what they read, so each form is set. Chinese IMEs running
+ * through TSF take the candidate position, Japanese and Korean IMEs the
+ * excluded rectangle, and older IMEs, magnifiers and screen readers follow the
+ * system caret, which stays hidden: CUI draws its own. */
+static void cui__win32_place_ime(cui__win32 *w) {
+    if (!w->ime_caret_set) return;
+    RECT c = w->ime_caret;
+    if (GetFocus() == w->hwnd) {
+        int h = (int)(c.bottom - c.top);
+        if (w->sys_caret_h != h) {
+            if (w->sys_caret_h) DestroyCaret();
+            w->sys_caret_h = CreateCaret(w->hwnd, NULL, 1, h) ? h : 0;
+        }
+        if (w->sys_caret_h) SetCaretPos(c.left, c.top);
+    }
+    HIMC imc = ImmGetContext(w->hwnd);
+    if (!imc) return;   /* no IME for this window or this keyboard layout */
+    COMPOSITIONFORM comp;
+    memset(&comp, 0, sizeof comp);
+    comp.dwStyle = CFS_POINT;
+    comp.ptCurrentPos.x = c.left;
+    comp.ptCurrentPos.y = c.top;
+    ImmSetCompositionWindow(imc, &comp);
+    CANDIDATEFORM cand;
+    memset(&cand, 0, sizeof cand);
+    cand.dwIndex = 0;
+    cand.dwStyle = CFS_CANDIDATEPOS;
+    cand.ptCurrentPos.x = c.left;
+    cand.ptCurrentPos.y = c.bottom;
+    ImmSetCandidateWindow(imc, &cand);
+    cand.dwStyle = CFS_EXCLUDE;
+    cand.ptCurrentPos.y = c.top;
+    cand.rcArea = c;
+    ImmSetCandidateWindow(imc, &cand);
+    ImmReleaseContext(w->hwnd, imc);
+}
+
+/* CUI calls this every frame a text field has focus, with the caret in window
+ * points; the IME is told only when the caret moved. */
+static void cui__win32_text_input_rect(void *user, cui_rect caret) {
+    cui_app *app = user;
+    cui__win32 *w = cui__w(app);
+    float s = w->scale;
+    RECT r;
+    r.left = (LONG)floorf(caret.x * s);
+    r.top = (LONG)floorf(caret.y * s);
+    r.right = r.left + CUI_MAX(1, (LONG)ceilf(caret.w * s));
+    r.bottom = r.top + CUI_MAX(1, (LONG)ceilf(caret.h * s));
+    if (w->ime_caret_set && EqualRect(&r, &w->ime_caret)) return;
+    w->ime_caret = r;
+    w->ime_caret_set = true;
+    cui__win32_place_ime(w);
+}
+
+/* Maximize, minimize and restore play a DWM animation that holds the swap chain: a vsync swap
+ * inside it blocks the message loop for the whole animation, about a second. Present without
+ * vsync while it runs, so frames keep coming and DWM animates the latest one; the first swap
+ * after it puts vsync back (cui__plat_gl_swap). Reported in issue 117. */
+static void cui__win32_transition(cui_app *app) {
+    cui__win32 *w = cui__w(app);
+    if (!w || !w->vsync || !w->set_swap_interval) return;
+    w->transition_until = cui__plat_now() + 0.32;
+    if (!w->swap_fast) { w->set_swap_interval(0); w->swap_fast = true; app->present_fast = true; }
+}
+
 static LRESULT CALLBACK cui__win32_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     cui_app *app = (cui_app *)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
     if (!app) {
@@ -237,6 +311,11 @@ static LRESULT CALLBACK cui__win32_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         }
         return 0;
     case WM_ENTERSIZEMOVE: if (w) w->in_size_move = true; return 0;
+    case WM_SYSCOMMAND: {   /* the title bar's buttons and double-click, the taskbar */
+        UINT cmd = (UINT)wp & 0xFFF0;
+        if (cmd == SC_MAXIMIZE || cmd == SC_MINIMIZE || cmd == SC_RESTORE) cui__win32_transition(app);
+        break;   /* DefWindowProc runs the command */
+    }
     case WM_EXITSIZEMOVE: if (w) w->in_size_move = false; return 0;
     case WM_PAINT: {
         PAINTSTRUCT ps;
@@ -296,7 +375,7 @@ static LRESULT CALLBACK cui__win32_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         if (n > 64) n = 64;
         POINT pt = { 0, 0 };
         DragQueryPoint(drop, &pt);
-        char *paths[64];
+        char *paths[64] = { 0 };   /* zeroed: MinGW cannot tell that only the first `got` are read */
         int got = 0;
         for (UINT i = 0; i < n; i++) {
             UINT len = DragQueryFileW(drop, i, NULL, 0);
@@ -343,8 +422,20 @@ static LRESULT CALLBACK cui__win32_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         cui_input_text(ui, buf);
         return 0;
     }
-    case WM_SETFOCUS: cui_input_focus(ui, true); return 0;
-    case WM_KILLFOCUS: cui_input_focus(ui, false); return 0;
+    /* Text committed in an IME arrives as WM_CHAR, one UTF-16 unit at a time:
+     * DefWindowProcW turns the result string of WM_IME_COMPOSITION into
+     * WM_IME_CHAR and those into WM_CHAR, so neither is read here. */
+    case WM_IME_STARTCOMPOSITION:
+        if (w) cui__win32_place_ime(w);
+        break;
+    case WM_SETFOCUS:
+        if (w) cui__win32_place_ime(w);
+        cui_input_focus(ui, true);
+        return 0;
+    case WM_KILLFOCUS:
+        if (w && w->sys_caret_h) { DestroyCaret(); w->sys_caret_h = 0; }
+        cui_input_focus(ui, false);
+        return 0;
     case WM_SETCURSOR:
         if (w && LOWORD(lp) == HTCLIENT) { SetCursor(w->cursors[w->cursor]); return TRUE; }
         break;
@@ -361,6 +452,15 @@ static LRESULT CALLBACK cui__win32_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         break;
     }
     return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+/* The frame around the content at the window's DPI; left and top are negative. */
+static RECT cui__win32_frame(HWND hwnd) {
+    RECT r = { 0, 0, 0, 0 };
+    DWORD style = (DWORD)GetWindowLongW(hwnd, GWL_STYLE);
+    if (cui__AdjustWindowRectExForDpi && cui__GetDpiForWindow) cui__AdjustWindowRectExForDpi(&r, style, FALSE, 0, cui__GetDpiForWindow(hwnd));
+    else AdjustWindowRectEx(&r, style, FALSE, 0);
+    return r;
 }
 
 bool cui__plat_init(cui_app *app) {
@@ -387,16 +487,28 @@ bool cui__plat_init(cui_app *app) {
     WCHAR title[256];
     MultiByteToWideChar(CP_UTF8, 0, app->title, -1, title, 256);
     app->plat = w;
-    w->hwnd = CreateWindowExW(0, wc.lpszClassName, title, style, CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left, r.bottom - r.top,
+    const cui_window_placement *pl = app->desc.placement;
+    int left = CW_USEDEFAULT, top = CW_USEDEFAULT;
+    if (pl && pl->has_position) {
+        /* only a place whose title bar is on a monitor: one that was unplugged leaves it to Windows */
+        RECT caption = { pl->x + r.left, pl->y + r.top, pl->x + r.right, pl->y };
+        if (MonitorFromRect(&caption, MONITOR_DEFAULTTONULL)) { left = caption.left; top = caption.top; }
+    }
+    w->hwnd = CreateWindowExW(0, wc.lpszClassName, title, style, left, top, r.right - r.left, r.bottom - r.top,
                               NULL, NULL, inst, app);
     if (!w->hwnd) { free(w); app->plat = NULL; return false; }
     DragAcceptFiles(w->hwnd, TRUE);   /* files dropped from Explorer arrive as WM_DROPFILES */
     w->scale = cui__win32_window_scale(w->hwnd);
     if (w->scale != scale) {
-        RECT r2 = { 0, 0, (LONG)(app->desc.width * w->scale), (LONG)(app->desc.height * w->scale) };
-        AdjustWindowRectEx(&r2, style, FALSE, 0);
-        SetWindowPos(w->hwnd, NULL, 0, 0, r2.right - r2.left, r2.bottom - r2.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+        /* the frame at the DPI of the monitor the window opened on, which a saved place can make
+         * another than the primary one */
+        RECT f = cui__win32_frame(w->hwnd);
+        int fw = (int)(app->desc.width * w->scale) + (f.right - f.left);
+        int fh = (int)(app->desc.height * w->scale) + (f.bottom - f.top);
+        SetWindowPos(w->hwnd, NULL, 0, 0, fw, fh, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
+    /* the frame was measured at the primary monitor's DPI: place the content exactly */
+    if (left != CW_USEDEFAULT) cui__plat_set_position(app, pl->x, pl->y);
     RECT cr;
     GetClientRect(w->hwnd, &cr);
     w->width = cr.right; w->height = cr.bottom;
@@ -411,13 +523,15 @@ bool cui__plat_init(cui_app *app) {
     pi.set_clipboard = cui__win32_set_clip;
     pi.get_clipboard = cui__win32_get_clip;
     pi.set_cursor = cui__win32_set_cursor;
+    pi.set_text_input_rect = cui__win32_text_input_rect;
     cui_set_platform(app->ui, &pi);
     return true;
 }
 
 void cui__plat_show(cui_app *app) {
     cui__win32 *w = cui__w(app);
-    ShowWindow(w->hwnd, SW_SHOWDEFAULT);
+    const cui_window_placement *pl = app->desc.placement;
+    ShowWindow(w->hwnd, pl && pl->state == CUI_WINDOW_MAXIMIZED ? SW_SHOWMAXIMIZED : SW_SHOWDEFAULT);
     UpdateWindow(w->hwnd);
 }
 
@@ -470,10 +584,21 @@ bool cui__plat_gl_create(cui_app *app, bool vsync) {
     w->glrc = ctx;
     PFN_wglSwapIntervalEXT swap = (PFN_wglSwapIntervalEXT)(void *)wglGetProcAddress("wglSwapIntervalEXT");
     if (swap) swap(vsync ? 1 : 0);
+    w->set_swap_interval = swap;
+    w->vsync = vsync;
     return true;
 }
 
-void cui__plat_gl_swap(cui_app *app) { SwapBuffers(cui__w(app)->hdc); }
+void cui__plat_gl_swap(cui_app *app) {
+    cui__win32 *w = cui__w(app);
+    if (w->swap_fast && cui__plat_now() >= w->transition_until) {   /* the window animation is over */
+        w->set_swap_interval(1);
+        w->swap_fast = false;
+        app->present_fast = false;
+        cui_request_redraw(app->ui);
+    }
+    SwapBuffers(w->hdc);
+}
 
 void cui__plat_present(cui_app *app, const void *bgra, int width, int height, int stride) {
     cui__win32 *w = cui__w(app);
@@ -550,4 +675,97 @@ double cui__plat_refresh_hz(cui_app *app) {
 void cui__plat_gl_release(cui_app *app) {
     cui__win32 *w = cui__w(app);
     if (w->glrc) { wglMakeCurrent(NULL, NULL); wglDeleteContext(w->glrc); w->glrc = NULL; }
+}
+
+void cui__plat_maximize(cui_app *app) {
+    cui__win32 *w = cui__w(app);
+    if (w && w->hwnd) { cui__win32_transition(app); ShowWindow(w->hwnd, SW_SHOWMAXIMIZED); }
+}
+
+void cui__plat_minimize(cui_app *app) { cui__win32_transition(app); ShowWindow(cui__w(app)->hwnd, SW_MINIMIZE); }
+void cui__plat_restore(cui_app *app) { cui__win32_transition(app); ShowWindow(cui__w(app)->hwnd, SW_RESTORE); }
+
+cui_window_state cui__plat_window_state(cui_app *app) {
+    HWND hwnd = cui__w(app)->hwnd;
+    return IsIconic(hwnd) ? CUI_WINDOW_MINIMIZED : IsZoomed(hwnd) ? CUI_WINDOW_MAXIMIZED : CUI_WINDOW_NORMAL;
+}
+
+/* Window placements are in workspace coordinates: screen coordinates less the taskbars along
+ * the top and the left of the window's monitor. This is that offset for a monitor. */
+static POINT cui__win32_work_offset(HMONITOR monitor) {
+    POINT o = { 0, 0 };
+    MONITORINFO mi;
+    mi.cbSize = sizeof mi;
+    if (GetMonitorInfoW(monitor, &mi)) {
+        o.x = mi.rcWork.left - mi.rcMonitor.left;
+        o.y = mi.rcWork.top - mi.rcMonitor.top;
+    }
+    return o;
+}
+
+typedef struct cui__win32_workspace_search {
+    RECT workspace;     /* the rectangle in workspace coordinates */
+    POINT offset;
+    bool found;
+} cui__win32_workspace_search;
+
+/* Takes the monitor that a workspace rectangle lands on when converted with that monitor's own
+ * offset: the monitor itself cannot be read from workspace coordinates. */
+static BOOL CALLBACK cui__win32_workspace_monitor(HMONITOR monitor, HDC dc, LPRECT bounds, LPARAM data) {
+    (void)dc; (void)bounds;
+    cui__win32_workspace_search *search = (cui__win32_workspace_search *)data;
+    POINT o = cui__win32_work_offset(monitor);
+    RECT screen = search->workspace;
+    OffsetRect(&screen, o.x, o.y);
+    if (MonitorFromRect(&screen, MONITOR_DEFAULTTONEAREST) != monitor) return TRUE;
+    search->offset = o;
+    search->found = true;
+    return FALSE;
+}
+
+/* The offset from workspace to screen coordinates for a rectangle in workspace coordinates. */
+static POINT cui__win32_workspace_offset(const RECT *workspace) {
+    cui__win32_workspace_search search;
+    memset(&search, 0, sizeof search);
+    search.workspace = *workspace;
+    EnumDisplayMonitors(NULL, NULL, cui__win32_workspace_monitor, (LPARAM)&search);
+    return search.found ? search.offset : cui__win32_work_offset(MonitorFromRect(workspace, MONITOR_DEFAULTTONEAREST));
+}
+
+void cui__plat_set_position(cui_app *app, int x, int y) {
+    HWND hwnd = cui__w(app)->hwnd;
+    RECT f = cui__win32_frame(hwnd);
+    if (!IsIconic(hwnd) && !IsZoomed(hwnd)) {
+        SetWindowPos(hwnd, NULL, x + f.left, y + f.top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        return;
+    }
+    /* move the normal rectangle: the window keeps its state and goes there when restored */
+    WINDOWPLACEMENT wp;
+    wp.length = sizeof wp;
+    if (!GetWindowPlacement(hwnd, &wp)) return;
+    RECT r = wp.rcNormalPosition;
+    RECT moved = { x + f.left, y + f.top, x + f.left + (r.right - r.left), y + f.top + (r.bottom - r.top) };
+    POINT o = cui__win32_work_offset(MonitorFromRect(&moved, MONITOR_DEFAULTTONEAREST));
+    OffsetRect(&moved, -o.x, -o.y);
+    wp.rcNormalPosition = moved;
+    wp.showCmd = IsIconic(hwnd) ? SW_SHOWMINNOACTIVE : SW_SHOWMAXIMIZED;
+    SetWindowPlacement(hwnd, &wp);
+}
+
+void cui__plat_placement(cui_app *app, cui_window_placement *out) {
+    cui__win32 *w = cui__w(app);
+    /* the normal rectangle, which also outlasts a snap to half the screen, as Windows' own
+     * windows remember it */
+    WINDOWPLACEMENT wp;
+    wp.length = sizeof wp;
+    if (!GetWindowPlacement(w->hwnd, &wp)) return;
+    RECT r = wp.rcNormalPosition, f = cui__win32_frame(w->hwnd);
+    POINT o = cui__win32_workspace_offset(&r);
+    out->x = r.left + o.x - f.left;
+    out->y = r.top + o.y - f.top;
+    out->width = (int)((float)(r.right - r.left - (f.right - f.left)) / w->scale + 0.5f);
+    out->height = (int)((float)(r.bottom - r.top - (f.bottom - f.top)) / w->scale + 0.5f);
+    out->has_position = true;
+    bool maximized = IsZoomed(w->hwnd) || (IsIconic(w->hwnd) && (wp.flags & WPF_RESTORETOMAXIMIZED));
+    out->state = maximized ? CUI_WINDOW_MAXIMIZED : CUI_WINDOW_NORMAL;
 }

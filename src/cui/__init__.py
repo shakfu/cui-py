@@ -13,5 +13,5 @@ for ui in app.frames():
 from cui._core import *
 from cui._core import VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 CUI_VERSION = f"{VERSION_MAJOR}.{VERSION_MINOR}.{VERSION_PATCH}"

@@ -59,3 +59,57 @@ def test_image_create(ctx: cui.Context) -> None:
     with pytest.raises(ValueError, match="bytes"):
         ctx.image_create(2, 2, b"\0" * 15)
     ctx.image_destroy(tex)
+
+
+def _pixel(ctx: cui.Context, tex: int, x: int, y: int) -> bytes:
+    """Draws `tex` filling 400x300 at the top-left and reads pixel x, y."""
+    run(ctx, lambda ui: ui.image(tex, width=400, height=300))
+    w, _ = ctx.render_size()
+    i = (y * w + x) * 4
+    return ctx.render()[i : i + 4]
+
+
+def test_image_update(ctx: cui.Context) -> None:
+    red, green = b"\xff\0\0\xff", b"\0\xff\0\xff"
+    tex = ctx.image_create(2, 2, red * 4)
+    assert _pixel(ctx, tex, 100, 75) == red
+    ctx.image_update(tex, 0, 0, 2, 2, green * 4)
+    assert _pixel(ctx, tex, 100, 75) == green
+    # a 1x2 column through a padded buffer: 12-byte rows, 4 bytes used per row
+    ctx.image_update(tex, 0, 0, 1, 2, red + b"\0" * 8 + red, stride=12)
+    assert _pixel(ctx, tex, 50, 75) == red
+    assert _pixel(ctx, tex, 350, 75) == green
+
+
+def test_image_update_rejects_bad_arguments(ctx: cui.Context) -> None:
+    tex = ctx.image_create(2, 2, b"\0" * 16)
+    with pytest.raises(ValueError, match="outside"):
+        ctx.image_update(tex, 1, 0, 2, 2, b"\0" * 16)
+    with pytest.raises(ValueError, match="outside"):
+        ctx.image_update(tex, -1, 0, 1, 1, b"\0" * 4)
+    with pytest.raises(ValueError, match="positive"):
+        ctx.image_update(tex, 0, 0, 0, 1, b"")
+    with pytest.raises(ValueError, match="stride"):
+        ctx.image_update(tex, 0, 0, 2, 1, b"\0" * 8, stride=4)
+    with pytest.raises(ValueError, match="bytes"):
+        ctx.image_update(tex, 0, 0, 2, 2, b"\0" * 15)
+    with pytest.raises(ValueError, match="not an image"):
+        ctx.image_update(tex + 1000, 0, 0, 1, 1, b"\0" * 4)
+    ctx.image_destroy(tex)
+    with pytest.raises(ValueError, match="not an image"):
+        ctx.image_update(tex, 0, 0, 1, 1, b"\0" * 4)
+
+
+def test_image_functions_take_any_buffer(ctx: cui.Context) -> None:
+    import array
+
+    blue = b"\0\0\xff\xff"
+    tex = ctx.image_create(2, 2, bytearray(b"\xff\0\0\xff" * 4))
+    ctx.image_update(tex, 0, 0, 2, 2, memoryview(blue * 4))
+    assert _pixel(ctx, tex, 100, 75) == blue
+    ctx.image_update(tex, 0, 0, 2, 2, array.array("B", b"\0\xff\0\xff" * 4))
+    assert _pixel(ctx, tex, 100, 75) == b"\0\xff\0\xff"
+    with pytest.raises(TypeError):
+        ctx.image_update(tex, 0, 0, 1, 1, "abcd")  # type: ignore[arg-type]
+    with pytest.raises(BufferError):
+        ctx.image_update(tex, 0, 0, 1, 1, memoryview(bytes(32))[::2])  # not contiguous

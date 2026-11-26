@@ -816,6 +816,7 @@ static void cui__place(cui_ctx *ui, int i) {
         ss->content_h = n->content_h;
         ss->view_w = n->rect.w;
         ss->view_h = n->rect.h;
+        ss->laid_y = ss->y;
     }
     for (int c = n->first; c >= 0; c = ui->nodes[c].next) cui__place(ui, c);
     for (int c = n->abs_first; c >= 0; c = ui->nodes[c].next) {
@@ -931,7 +932,8 @@ static void cui__add_hit(cui_ctx *ui, cui_id id, cui_rect r, uint32_t flags) {
     h->id = id; h->rect = r; h->flags = flags; h->layer = ui->current_layer; h->order = ui->hit_count;
 }
 
-static cui_rect cui__xform_rect(cui_ctx *ui, cui_rect r) {
+/** Map a rectangle to the same logical coordinates used for hit testing. */
+cui_rect cui__xform_rect(cui_ctx *ui, cui_rect r) {
     cui_xform x = ui->dl.xform_stack[ui->dl.xform_depth - 1];
     if (x.scale == 1 && x.ox == 0 && x.oy == 0) return r;
     float s = ui->scale;
@@ -1046,7 +1048,11 @@ static void cui__paint_node(cui_ctx *ui, int i, cui_rect clip) {
         cui_push_clip(ui, r);
         child_clip = cui__rect_intersect(clip, cui__xform_rect(ui, r));
     }
-    for (int c = n->abs_first; c >= 0; c = ui->nodes[c].next) cui__paint_node(ui, c, child_clip);
+    bool any_overlay = false;
+    for (int c = n->abs_first; c >= 0; c = ui->nodes[c].next) {
+        if (ui->nodes[c].flags & CUI_NF_OVERLAY) { any_overlay = true; continue; }
+        cui__paint_node(ui, c, child_clip);
+    }
     bool any_top = false;
     for (int c = n->first; c >= 0; c = ui->nodes[c].next) {
         if (ui->nodes[c].flags & CUI_NF_ON_TOP) { any_top = true; continue; }
@@ -1055,6 +1061,9 @@ static void cui__paint_node(cui_ctx *ui, int i, cui_rect clip) {
     if (any_top)
         for (int c = n->first; c >= 0; c = ui->nodes[c].next)
             if (ui->nodes[c].flags & CUI_NF_ON_TOP) cui__paint_node(ui, c, child_clip);
+    if (any_overlay)
+        for (int c = n->abs_first; c >= 0; c = ui->nodes[c].next)
+            if (ui->nodes[c].flags & CUI_NF_OVERLAY) cui__paint_node(ui, c, child_clip);
     if (clips) cui_pop_clip(ui);
     n = &ui->nodes[i];
     if (border_after) cui_draw_rect_border(ui, r, n->radius, cui__rgba(0, 0, 0, 0), n->border_color, n->border);
@@ -1065,6 +1074,8 @@ static void cui__paint_node(cui_ctx *ui, int i, cui_rect clip) {
 
 void cui__paint_add_hit(cui_ctx *ui, cui_id id, cui_rect r, uint32_t flags) { cui__add_hit(ui, id, r, flags); }
 
+#define CUI__WHEEL_XFORM 0x5E1F0A2Du   /* salts the id of a wheel area's recorded transform */
+
 void cui__paint_wheel_hit(cui_ctx *ui, cui_id id, cui_rect r) {
     cui_rect clip = ui->dl.clip_stack[ui->dl.clip_depth - 1];
     float s = ui->scale;
@@ -1073,7 +1084,22 @@ void cui__paint_wheel_hit(cui_ctx *ui, cui_id id, cui_rect r) {
     cui_scroll_state *ss = cui_state(ui, id, sizeof *ss);
     ss->view_w = r.w; ss->view_h = r.h;
     ss->content_w = r.w + 1e6f; ss->content_h = r.h + 1e6f;
-    cui__add_hit(ui, id, cui__rect_intersect(r, cp), CUI_NF_SCROLL_X | CUI_NF_SCROLL_Y);
+    cui__add_hit(ui, id, cui__rect_intersect(cui__xform_rect(ui, r), cp), CUI_NF_SCROLL_X | CUI_NF_SCROLL_Y);
+    /* the transform it was drawn with, for cui__wheel_point while the wheel is handled next frame */
+    cui_xform x = ui->dl.xform_stack[ui->dl.xform_depth - 1];
+    cui_xform *wx = cui_state(ui, id ^ CUI__WHEEL_XFORM, sizeof *wx);
+    *wx = (cui_xform){ .scale = x.scale, .ox = x.ox / s, .oy = x.oy / s };
+}
+
+cui_vec2 cui__wheel_point(cui_ctx *ui, cui_id id) {
+    cui_vec2 p = ui->building.screen_pointer ? *ui->building.screen_pointer : cui_mouse_pos(ui);
+    const cui_xform *wx = cui_state(ui, id ^ CUI__WHEEL_XFORM, sizeof *wx);
+    if (!(wx->scale > 0)) return p;   /* not painted yet: no transform known */
+    return (cui_vec2){ (p.x - wx->ox) / wx->scale, (p.y - wx->oy) / wx->scale };
+}
+
+void cui_wheel_region(cui_ctx *ui, cui_id id, cui_rect rect) {
+    if (!cui_is_disabled(ui)) cui__paint_wheel_hit(ui, id, rect);   /* a disabled canvas leaves the wheel to the page */
 }
 
 void cui__paint(cui_ctx *ui) {

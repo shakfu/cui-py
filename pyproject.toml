@@ -1,6 +1,6 @@
 [project]
 name = "cui-py"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cython bindings for the cui UI framework"
 readme = "README.md"
 # The extension embeds CUI (MIT) and its fonts: Inter and Geist (OFL-1.1), Lucide (ISC).
@@ -15,12 +15,11 @@ license-files = [
 authors = [
     { name = "Shakeeb Alireza", email = "shakfu@users.noreply.github.com" }
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["cui", "ui", "cython", "bindings"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -49,8 +48,8 @@ build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
 wheel.packages = ["src/cui"]
-# One cp310-abi3 wheel per platform covers CPython 3.10+.
-wheel.py-api = "cp310"
+# One cp311-abi3 wheel per platform covers CPython 3.11+, the first stable ABI with the buffer protocol.
+wheel.py-api = "cp311"
 install.components = ["python"]
 # Kept between builds, so a rebuild recompiles only what changed and libghostty-vt
 # is fetched and built once. That needs the Makefile's non-isolated builds: in a new

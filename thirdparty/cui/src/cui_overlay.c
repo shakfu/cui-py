@@ -86,6 +86,7 @@ bool cui__popup_begin(cui_ctx *ui, cui_id id, cui_id anchor, int placement, floa
     cui_popup *p = cui__popup_get(ui, id, false);
     if (!p) return false;
     p->last_frame = ui->frame;
+    p->parent_layer = ui->current_layer;
     if (p->open) {
         bool top = cui__popup_is_topmost(ui, p);
         if (top && cui_key_pressed(ui, CUI_KEY_ESCAPE)) { p->open = false; ui->kpressed[CUI_KEY_ESCAPE] = 0; }
@@ -255,7 +256,9 @@ bool cui_menu_item_ex(cui_ctx *ui, const char *label, const cui_menu_item_opts *
     cui__open(ui, i);
     cui_color fg = o->danger ? CUI_C(ui, DANGER) : CUI_C(ui, FOREGROUND);
     if (o->icon) cui__icon_node(ui, o->icon, 16, o->danger ? fg : CUI_C(ui, TEXT_SECONDARY));
-    int t = cui__text_node(ui, label, cui__display_len(label), CUI_FONT_BODY, cui__fs(ui, ui->theme.text_body), fg, false);
+    float ts = o->text_size > 0 ? o->text_size : ui->theme.text_body;
+    if (o->text_size > 0) ui->nodes[i].h = CUI_PX(CUI_MAX(32.0f, roundf(cui__fs(ui, ts)) + 20));
+    int t = cui__text_node(ui, label, cui__display_len(label), o->font, cui__fs(ui, ts), fg, false);
     ui->nodes[t].line_height = 1.3f;
     ui->nodes[t].w = CUI_FILL;
     if (o->shortcut) {
@@ -297,6 +300,14 @@ void cui_menu_label(cui_ctx *ui, const char *text) {
 
 typedef struct { float hover, focus; char query[96]; } cui__select_state;
 
+/* The search field hands the keyboard back to the trigger once the list is closed. */
+static void cui__select_refocus(cui_ctx *ui, cui_id trigger, cui_id search, bool search_open, bool disabled) {
+    if (ui->focus != search || search_open) return;
+    ui->focus = disabled ? 0 : trigger;
+    ui->edit = NULL;
+}
+
+/** Hand focus back to the trigger when its search editor is dismissed. */
 bool cui_select_ex(cui_ctx *ui, const char *id_str, const char *const *items, int count, int *index, const cui_select_opts *o) {
     cui_select_opts d;
     memset(&d, 0, sizeof d);
@@ -317,6 +328,7 @@ bool cui_select_ex(cui_ctx *ui, const char *id_str, const char *const *items, in
         if (!open) {
             cui__menu_nav *nav = cui_state(ui, pid ^ 0x4E4156u, sizeof *nav);
             nav->highlight = *index;
+            if (r.keyboard_activate) ui->kpressed[CUI_KEY_ENTER] = 0;   /* the Enter that opens the list does not also pick */
         }
     }
     if (p && !p->open && r.focus_visible && (cui_key_pressed(ui, CUI_KEY_DOWN) || cui_key_pressed(ui, CUI_KEY_UP))) {
@@ -371,15 +383,21 @@ bool cui_select_ex(cui_ctx *ui, const char *id_str, const char *const *items, in
     if (col >= 0) cui__close(ui);
     ui->last_id = id;
 
-    if (cui__popup_begin(ui, pid, id, CUI_PLACE_BOTTOM_START, 0, 6, 0, true)) {
+    cui_push_id_int(ui, (int)pid);
+    cui_id sid = cui_make_id(ui, "#q");
+    cui_pop_id(ui);
+    bool building = cui__popup_begin(ui, pid, id, CUI_PLACE_BOTTOM_START, 0, 6, 0, true);
+    /* Esc or a click outside closed it just now: refocus before the field is built,
+     * because while the list animates out the field is disabled and drops the focus */
+    cui__select_refocus(ui, id, sid, p && p->open && o->searchable, disabled);
+    if (building) {
         if (o->searchable) {
             cui_input_opts io;
             memset(&io, 0, sizeof io);
             io.placeholder = "Search";
-            io.autofocus = true;
             io.size = CUI_SIZE_SM;
-            cui_id sid = cui_make_id(ui, "#q");
-            if (p && p->opened_frame == ui->frame - 1) ui->focus = sid;
+            io.autofocus = p->open;
+            if (p->open && p->opened_frame == ui->frame - 1) ui->focus = sid;
             int box = cui__node_new(ui, 0);
             ui->nodes[box].pad[0] = 2; ui->nodes[box].pad[2] = 4;
             cui__open(ui, box);
@@ -418,6 +436,7 @@ bool cui_select_ex(cui_ctx *ui, const char *id_str, const char *const *items, in
         cui__scroll_end_ex(ui);
         cui__popup_end(ui);
     }
+    cui__select_refocus(ui, id, sid, p && p->open && o->searchable, disabled);   /* an item was picked */
     return *index != old;
 }
 
@@ -428,6 +447,7 @@ bool cui_select_ex(cui_ctx *ui, const char *id_str, const char *const *items, in
 typedef struct { char text[256]; cui_id anchor, shown; cui_spring t, ox, oy; double last_shown; bool visible, passive; } cui__tooltip_state;
 static cui__tooltip_state *cui__tooltip_get(cui_ctx *ui) { return cui_state(ui, 0x7001717u, sizeof(cui__tooltip_state)); }
 
+/** Hover starts cold until a tooltip has actually appeared. */
 void cui_tooltip(cui_ctx *ui, const char *text) {
     cui_id anchor = ui->last_id;
     if (!anchor || !text) return;
@@ -438,7 +458,7 @@ void cui_tooltip(cui_ctx *ui, const char *text) {
             ui->tooltip_id = anchor;
             ui->hover_start = ui->time;
         }
-        bool warm = ui->time - tt->last_shown < 0.4;
+        bool warm = tt->last_shown > 0 && ui->time - tt->last_shown < 0.4;
         float delay = warm ? 0.0f : 0.55f;
         if (ui->time - ui->hover_start >= delay) {
             snprintf(tt->text, sizeof tt->text, "%s", text);
@@ -453,7 +473,7 @@ void cui_tooltip(cui_ctx *ui, const char *text) {
     }
 }
 
-/* Like cui_tooltip, for a rect that is not interactive (a truncated label). A
+/** Like cui_tooltip, for a rect that is not interactive (a truncated label). A
  * widget's own tooltip wins if both ask in the same frame. */
 void cui__tooltip_passive(cui_ctx *ui, cui_id anchor, const char *text) {
     cui__tooltip_state *tt = cui__tooltip_get(ui);
@@ -463,7 +483,7 @@ void cui__tooltip_passive(cui_ctx *ui, cui_id anchor, const char *text) {
      * open above that rect owns the pointer, so its label stays quiet */
     if (ui->hot_layer != ui->current_layer) return;
     if (ui->tooltip_id != anchor) { ui->tooltip_id = anchor; ui->hover_start = ui->time; }
-    bool warm = ui->time - tt->last_shown < 0.4;
+    bool warm = tt->last_shown > 0 && ui->time - tt->last_shown < 0.4;
     float delay = warm ? 0.0f : 0.7f;
     if (ui->time - ui->hover_start >= delay) {
         snprintf(tt->text, sizeof tt->text, "%s", text);
@@ -551,14 +571,113 @@ static void cui__tooltip_render(cui_ctx *ui) {
 /* Dialogs and sheets                                                       */
 /* ------------------------------------------------------------------------ */
 
-typedef struct { cui_spring t; uint64_t opened; bool was_open; int z; } cui__modal_state;
+/* A dialog the user may move and resize keeps its offset from the centre and
+ * its size here; grab is what the pointer is holding (CUI__GRAB_*) and the
+ * rest is where the grab began. */
+typedef struct {
+    cui_spring t; uint64_t opened; bool was_open; int z;
+    float dx, dy, w, h;
+    int grab;
+    float gx, gy, x0, y0, w0, h0;
+} cui__modal_state;
+
+enum { CUI__GRAB_LEFT = 1, CUI__GRAB_RIGHT = 2, CUI__GRAB_TOP = 4, CUI__GRAB_BOTTOM = 8, CUI__GRAB_MOVE = 16 };
+enum { CUI__GRIP_DRAG = 1, CUI__GRIP_RESIZE = 2 };
+
+#define CUI__DIALOG_MIN_W 240.0f
+#define CUI__DIALOG_MIN_H 120.0f
+#define CUI__DIALOG_EDGE_IN 6.0f     /* grab zone inside the border */
+#define CUI__DIALOG_EDGE_OUT 3.0f    /* and outside it */
+
+/* Which edges of r the point is on (CUI__GRAB_* bits), 0 when it is not near the border. */
+static int cui__dialog_edges(cui_rect r, float x, float y) {
+    if (x < r.x - CUI__DIALOG_EDGE_OUT || x > r.x + r.w + CUI__DIALOG_EDGE_OUT ||
+        y < r.y - CUI__DIALOG_EDGE_OUT || y > r.y + r.h + CUI__DIALOG_EDGE_OUT) return 0;
+    int e = 0;
+    if (x < r.x + CUI__DIALOG_EDGE_IN) e |= CUI__GRAB_LEFT;
+    else if (x > r.x + r.w - CUI__DIALOG_EDGE_IN) e |= CUI__GRAB_RIGHT;
+    if (y < r.y + CUI__DIALOG_EDGE_IN) e |= CUI__GRAB_TOP;
+    else if (y > r.y + r.h - CUI__DIALOG_EDGE_IN) e |= CUI__GRAB_BOTTOM;
+    return e;
+}
+
+/* While a grab is held, turn the pointer's travel into a new offset and size. */
+static void cui__dialog_follow(cui_ctx *ui, cui__modal_state *st) {
+    float ddx = ui->mx - st->gx, ddy = ui->my - st->gy;
+    if (st->grab & CUI__GRAB_MOVE) { st->dx = st->x0 + ddx; st->dy = st->y0 + ddy; return; }
+    /* the panel is centred, so moving one edge by d moves the centre by d / 2 */
+    if (st->grab & (CUI__GRAB_LEFT | CUI__GRAB_RIGHT)) {
+        float sign = (st->grab & CUI__GRAB_RIGHT) ? 1.0f : -1.0f;
+        st->w = cui__clampf(st->w0 + sign * ddx, CUI_MIN(CUI__DIALOG_MIN_W, ui->vw - 32), ui->vw - 32);
+        st->dx = st->x0 + sign * (st->w - st->w0) * 0.5f;
+    }
+    if (st->grab & (CUI__GRAB_TOP | CUI__GRAB_BOTTOM)) {
+        float sign = (st->grab & CUI__GRAB_BOTTOM) ? 1.0f : -1.0f;
+        st->h = cui__clampf(st->h0 + sign * ddy, CUI__DIALOG_MIN_H, CUI_MAX(CUI__DIALOG_MIN_H, ui->vh - 48));
+        st->dy = st->y0 + sign * (st->h - st->h0) * 0.5f;
+    }
+}
+
+/* Input for a dialog that can be moved or resized, read against last frame's
+ * rectangle like every other control. It runs before the scrim reads the
+ * pointer: a grab holds ui->active, so letting go outside the panel is not a
+ * click on the scrim. */
+static void cui__dialog_grip(cui_ctx *ui, cui__modal_state *st, cui_id id, cui_id scrim, int grip) {
+    cui_id head = id ^ 0xD2A6u, edge = id ^ 0x6A1Fu;
+    cui_rect pr = cui__prev_rect(ui, id ^ 0x9A4Eu);
+    bool settled = st->t.x > 0.99f && pr.w > 0;
+    int zone = 0;
+    if ((grip & CUI__GRIP_RESIZE) && settled && (ui->active == 0 || ui->active == edge)) {
+        cui_rect r = { pr.x + st->dx, pr.y + st->dy, pr.w, pr.h };
+        zone = cui__dialog_edges(r, ui->mx, ui->my);
+        /* a control on the border (the close button) wins */
+        if (zone && ui->hot && ui->hot != scrim && ui->hot != head) zone = 0;
+    }
+    if (zone && ui->mpressed[CUI_MOUSE_LEFT] && ui->active == 0) {
+        ui->active = edge;
+        st->grab = zone;
+        st->gx = ui->mx; st->gy = ui->my; st->x0 = st->dx; st->y0 = st->dy;
+        st->w0 = st->w > 0 ? st->w : pr.w;
+        st->h0 = st->h > 0 ? st->h : pr.h;
+        if (!(st->w > 0)) st->w = st->w0;
+        if (!(st->h > 0)) st->h = st->h0;
+    }
+    if (grip & CUI__GRIP_DRAG) {
+        cui_interact hr = cui__interact(ui, head, CUI_IF_DRAG);
+        if (hr.hovered || hr.active) cui__set_cursor(ui, CUI_CURSOR_MOVE);
+        if (hr.active && hr.pressed && !st->grab) {
+            st->grab = CUI__GRAB_MOVE;
+            st->gx = ui->mx; st->gy = ui->my; st->x0 = st->dx; st->y0 = st->dy;
+        }
+    }
+    bool held = (ui->active == edge || ui->active == head) && ui->mdown[CUI_MOUSE_LEFT];
+    if (!held) {
+        st->grab = 0;
+        if (ui->active == edge) ui->active = 0;   /* the edge id has no control to clear it */
+    }
+    if (st->grab) cui__dialog_follow(ui, st);
+    if (zone || (st->grab && !(st->grab & CUI__GRAB_MOVE))) {
+        int g = st->grab ? st->grab : zone;
+        cui__set_cursor(ui, (g & (CUI__GRAB_LEFT | CUI__GRAB_RIGHT)) ? CUI_CURSOR_RESIZE_EW : CUI_CURSOR_RESIZE_NS);
+    }
+    /* keep the stored width inside the window, even after the window shrinks */
+    if (st->w > 0) st->w = cui__clampf(st->w, CUI_MIN(CUI__DIALOG_MIN_W, ui->vw - 32), ui->vw - 32);
+    /* keep the panel inside the window */
+    float sw = st->w > 0 ? st->w : pr.w, sh = st->h > 0 ? st->h : pr.h;
+    float mx = CUI_MAX(0, (ui->vw - sw) * 0.5f), my = CUI_MAX(0, (ui->vh - sh) * 0.5f);
+    st->dx = cui__clampf(st->dx, -mx, mx);
+    st->dy = cui__clampf(st->dy, -my, my);
+}
 
 
 static bool cui__modal_begin(cui_ctx *ui, cui_id id, const char *title, bool *open, const char *description, float width,
-                             bool persistent, bool close_button, int kind, cui_side side) {
+                             bool persistent, bool close_button, int kind, cui_side side, int grip) {
     cui__modal_state *st = cui_state(ui, id, sizeof *st);
     bool is_open = open && *open;
-    if (is_open && !st->was_open) { st->opened = ui->frame; st->z = 1000 + ++ui->layer_seq; }
+    if (is_open && !st->was_open) {
+        st->opened = ui->frame; st->z = 1000 + ++ui->layer_seq;
+        st->dx = st->dy = st->w = st->h = 0; st->grab = 0;   /* a dialog opens centred at its own size */
+    }
     st->was_open = is_open;
     float target = is_open ? 1.0f : 0.0f;
     if (is_open) {
@@ -571,19 +690,19 @@ static bool cui__modal_begin(cui_ctx *ui, cui_id id, const char *title, bool *op
     int z = st->z ? st->z : 1000 + ++ui->layer_seq;
     st->z = z;
     /* Esc and click outside: only the topmost modal reacts, and only when no popup inside it is open */
-    bool topmost = ui->prev_modal_layer == 0 || ui->prev_modal_layer == id;
+    bool topmost = ui->prev_modal.id == 0 || ui->prev_modal.id == id;
     for (int i = 0; i < ui->popup_count; i++) if (ui->popups[i].open) topmost = false;
     if (is_open && !persistent && topmost) {
         /* while a text field has focus, the first Esc leaves the field */
         if (cui_key_pressed(ui, CUI_KEY_ESCAPE) && !ui->edit_prev) { *open = false; ui->kpressed[CUI_KEY_ESCAPE] = 0; }
         if (ui->mreleased[0] && ui->hot == scrim_id && ui->active == scrim_id) *open = false;
     }
-    if (is_open && (!ui->modal_layer || z > ui->modal_z)) {
-        ui->modal_layer = id;
-        ui->modal_z = z;
+    if (is_open && (!ui->modal.id || z > ui->modal.z)) {
+        ui->modal = (cui_modal_layer){ id, z };
         /* move keyboard focus into the dialog when it opens */
         if (st->opened == ui->frame && ui->focus_visible) ui->focus = 0;
     }
+    if (is_open && kind == 0 && grip) cui__dialog_grip(ui, st, id, scrim_id, grip);
     cui__interact(ui, scrim_id, 0);
     int root = cui__float_begin(ui, id, z, 0, CUI__PLACE_FULL, 0);
     cui_node *rn = &ui->nodes[root];
@@ -611,11 +730,13 @@ static bool cui__modal_begin(cui_ctx *ui, cui_id id, const char *title, bool *op
     pn->gap = 16;
     pn->flags |= CUI_NF_HIT_OPAQUE;
     if (kind == 0) {
-        pn->w = CUI_PX(CUI_MIN(width, ui->vw - 32));
+        pn->w = CUI_PX(st->w > 0 ? st->w : CUI_MIN(width, ui->vw - 32));
         pn->max_h = ui->vh - 48;
+        if (st->h > 0) { pn->h = CUI_PX(st->h); pn->flags |= CUI_NF_CLIP; }
         pn->opacity = t;
         pn->scale = CUI__ENTER_SCALE + (1.0f - CUI__ENTER_SCALE) * t;
-        pn->ty = (1 - t) * 10;
+        pn->tx = st->dx;
+        pn->ty = (1 - t) * 10 + st->dy;
     } else {
         bool horiz = side == CUI_SIDE_LEFT || side == CUI_SIDE_RIGHT;
         if (horiz) { pn->w = CUI_PX(CUI_MIN(width, ui->vw - 16)); pn->h = CUI_PX(ui->vh - 16); }
@@ -636,7 +757,8 @@ static bool cui__modal_begin(cui_ctx *ui, cui_id id, const char *title, bool *op
     if (ui->dialog_depth < 8) ui->dialog_stack[ui->dialog_depth++] = id;
     cui_push_id_int(ui, (int)id);
     /* header */
-    int head = cui__node_new(ui, 0);
+    int head = cui__node_new(ui, (kind == 0 && (grip & CUI__GRIP_DRAG)) ? id ^ 0xD2A6u : 0);
+    if (kind == 0 && (grip & CUI__GRIP_DRAG)) cui__mark_interactive(ui, head, 0);
     ui->nodes[head].dir = CUI_ROW; ui->nodes[head].align = CUI_ALIGN_START; ui->nodes[head].gap = 12;
     cui__open(ui, head);
     int hc = cui__node_new(ui, 0);
@@ -687,12 +809,21 @@ bool cui_dialog_begin(cui_ctx *ui, const char *title, bool *open, const cui_dial
     memset(&d, 0, sizeof d);
     if (!o) o = &d;
     cui_id id = cui_make_id(ui, title) ^ 0xD1A106u;
-    return cui__modal_begin(ui, id, title, open, o->description, o->width > 0 ? o->width : 440, o->persistent, !o->no_close_button, 0, CUI_SIDE_RIGHT);
+    return cui__modal_begin(ui, id, title, open, o->description, o->width > 0 ? o->width : 440, o->persistent, !o->no_close_button, 0, CUI_SIDE_RIGHT,
+                             (o->draggable ? CUI__GRIP_DRAG : 0) | (o->resizable ? CUI__GRIP_RESIZE : 0));
 }
 
 void cui_dialog_end(cui_ctx *ui) { cui__modal_end(ui, 0); }
 
 void cui_dialog_footer_begin(cui_ctx *ui) {
+    /* a dialog resized taller than its content keeps the footer at the bottom edge */
+    if (ui->dialog_depth > 0) {
+        cui__modal_state *st = cui_state(ui, ui->dialog_stack[ui->dialog_depth - 1], sizeof *st);
+        if (st->h > 0) {
+            int fill = cui__node_new(ui, 0);
+            ui->nodes[fill].h = CUI_FILL;
+        }
+    }
     int row = cui__node_new(ui, 0);
     cui_node *n = &ui->nodes[row];
     n->dir = CUI_ROW; n->gap = 8; n->justify = CUI_JUSTIFY_END;
@@ -707,7 +838,7 @@ bool cui_sheet_begin(cui_ctx *ui, const char *title, bool *open, const cui_sheet
     memset(&d, 0, sizeof d);
     if (!o) o = &d;
     cui_id id = cui_make_id(ui, title) ^ 0x5EE7u;
-    return cui__modal_begin(ui, id, title, open, o->description, o->size > 0 ? o->size : 400, false, true, 1, o->side);
+    return cui__modal_begin(ui, id, title, open, o->description, o->size > 0 ? o->size : 400, false, true, 1, o->side, 0);
 }
 
 void cui_sheet_end(cui_ctx *ui) { cui__modal_end(ui, 1); }
@@ -716,6 +847,7 @@ void cui_sheet_end(cui_ctx *ui) { cui__modal_end(ui, 1); }
 /* Toasts                                                                   */
 /* ------------------------------------------------------------------------ */
 
+/** Start the timer at creation so an idle interval cannot age a new toast. */
 int cui_toast_ex(cui_ctx *ui, const char *title, const cui_toast_opts *o) {
     cui_toast_opts d;
     memset(&d, 0, sizeof d);
@@ -727,6 +859,7 @@ int cui_toast_ex(cui_ctx *ui, const char *title, const cui_toast_opts *o) {
     cui_toast_item *t = &ui->toasts[ui->toast_count++];
     memset(t, 0, sizeof *t);
     t->handle = ui->toast_next_handle++;
+    t->last_tick = ui->time;
     snprintf(t->title, sizeof t->title, "%s", title ? title : "");
     if (o->description) snprintf(t->desc, sizeof t->desc, "%s", o->description);
     if (o->action) snprintf(t->action, sizeof t->action, "%s", o->action);
@@ -748,7 +881,7 @@ void cui_toast_dismiss(cui_ctx *ui, int handle) {
     for (int i = 0; i < ui->toast_count; i++) if (ui->toasts[i].handle == handle) ui->toasts[i].dismissed = true;
 }
 
-typedef struct { float hover; } cui__toasts_state;
+typedef struct { float hover; bool paused; } cui__toasts_state;
 
 typedef struct { float frac; cui_color c; } cui__toast_timer;
 static void cui__paint_toast_timer(cui_ctx *ui, cui_node *n, void *data) {
@@ -759,20 +892,25 @@ static void cui__paint_toast_timer(cui_ctx *ui, cui_node *n, void *data) {
     if (w > 0) cui_draw_rect(ui, (cui_rect){ r.x + inset, r.y + r.h - 3, w, 2 }, CUI_CORNERS(1), p->c);
 }
 
+/** Account for elapsed time before handling input, pausing while hovered. */
 static void cui__toasts_render(cui_ctx *ui) {
     if (ui->toast_count == 0) return;
     cui_id root_id = 0x70A57u;
     cui__toasts_state *ts = cui_state(ui, root_id, sizeof *ts);
     bool hovered = ui->hot_layer == root_id;
+    /* The elapsed interval belongs to the previous frame's hover state. */
+    bool was_paused = ts->paused;
+    ts->paused = hovered;
     cui__tween(ui, &ts->hover, hovered ? 1.0f : 0.0f, CUI__T_HOVER);
     float W = CUI_MIN(360.0f, ui->vw - 32);
     /* age, dismissal, removal */
     for (int i = 0; i < ui->toast_count; i++) {
         cui_toast_item *t = &ui->toasts[i];
-        if (!hovered && t->duration > 0 && !t->dismissed) {
-            t->age += ui->dt;
+        if (t->duration > 0 && !t->dismissed) {
+            if (!was_paused) t->age += (float)(ui->time - t->last_tick);
+            t->last_tick = ui->time;
             if (t->age >= t->duration) t->dismissed = true;
-            else cui__wakeup_after(ui, t->duration - t->age + 0.01f);
+            else if (!hovered) cui__wakeup_after(ui, t->duration - t->age + 0.01f);
         }
         cui__spring(ui, &t->enter, t->dismissed ? 0.0f : 1.0f, t->dismissed ? 0.22f : 0.38f, 0.0f);
     }
@@ -913,12 +1051,14 @@ static void cui__toasts_render(cui_ctx *ui) {
             cui_button_opts bo;
             memset(&bo, 0, sizeof bo);
             bo.size = CUI_SIZE_SM;
+            bo.disabled = t->dismissed;
             if (cui_button_ex(ui, t->action, &bo)) { t->action_clicked = true; t->dismissed = true; }
         }
         cui_button_opts xo;
         memset(&xo, 0, sizeof xo);
         xo.size = CUI_SIZE_SM;
         xo.color = CUI_COLOR_TEXT_MUTED;
+        xo.disabled = t->dismissed;
         if (cui_icon_button_ex(ui, CUI_ICON_X, &xo)) t->dismissed = true;
         ui->nodes[ui->last_node].w = CUI_PX(24); ui->nodes[ui->last_node].h = CUI_PX(24);
         ui->nodes[ui->last_node].opacity = 0.35f + 0.65f * ts->hover;
@@ -967,43 +1107,159 @@ static int cui__weekday(int y, int m, int d) {
     return (w + 6) % 7;
 }
 
-typedef struct { int view_y, view_m; bool init; } cui__cal_state;
+/* What the calendar shows: days, then a click on the title for the months of
+ * the year, then a click on the year for twelve years at a time. */
+enum { CUI__CAL_DAYS, CUI__CAL_MONTHS, CUI__CAL_YEARS };
+typedef struct { int view_y, view_m; bool init; int mode, year0; uint64_t built; } cui__cal_state;   /* built: the last frame it was shown */
 
-bool cui_calendar(cui_ctx *ui, const char *id_str, cui_date *value) {
-    cui_id id = cui_make_id(ui, id_str);
-    cui__cal_state *st = cui_state(ui, id, sizeof *st);
-    cui_date today = cui_date_today();
-    if (!st->init) {
-        cui_date base = (value && value->year) ? *value : today;
-        st->view_y = base.year; st->view_m = base.month; st->init = true;
-    }
-    bool changed = false;
-    cui_push_id(ui, id_str);
-    /* 34px day cells, down to 28 when the parent is narrow (phones) */
-    cui_rect cpr = cui__prev_rect(ui, id);
-    float cs = cpr.w > 0 ? floorf((cpr.w - 12) / 7) : 34;
-    cs = cs > 34 ? 34 : cs < 28 ? 28 : cs;
-    int col = cui__node_new(ui, id);
-    ui->nodes[col].gap = 8;
-    cui__soft_width(&ui->nodes[col], CUI_FIT, 7 * 34 + 6 * 2);
-    ui->nodes[col].min_w = 7 * 28 + 6 * 2;
-    ui->nodes[col].flags |= CUI_NF_ADAPTIVE;
-    cui__open(ui, col);
-    int head = cui__node_new(ui, 0);
-    ui->nodes[head].dir = CUI_ROW; ui->nodes[head].gap = 2; ui->nodes[head].pad[3] = 6;
-    cui__open(ui, head);
-    int ht = cui__text_node(ui, cui__frame_printf(ui, "%s %d", cui__month_name(ui, st->view_m - 1), st->view_y), -1,
-                            CUI_FONT_MEDIUM, cui__fs(ui, ui->theme.text_body + 1), CUI_C(ui, FOREGROUND), false);
+/* What the calendar's build phases share. */
+typedef struct {
+    cui_id id;
+    cui__cal_state *st;
+    cui_date *value;
+    cui_date today;
+    float cs;                  /* day cell size */
+    bool changed;
+} cui__calendar_build;
+
+/** The title, a button that changes the view, with a chevron after it. */
+static bool cui__calendar_title(cui_ctx *ui, cui__calendar_build *b, const char *text, const char *icon, const char *tip) {
+    cui_id tid = cui__hash_str("#title", b->id);
+    cui_interact r = cui__interact(ui, tid, CUI_IF_FOCUSABLE);
+    float hv = cui__hover_fade(ui, tid, r.hovered, CUI__T_HOVER);
+    float h = cui__control_height(ui, CUI_SIZE_SM);
+    int n = cui__node_new(ui, tid);
+    cui_node *tn = &ui->nodes[n];
+    tn->dir = CUI_ROW; tn->align = CUI_ALIGN_CENTER; tn->gap = 4;
+    tn->h = CUI_PX(h);
+    tn->pad[1] = 4; tn->pad[3] = 6;
+    tn->radius = CUI_CORNERS(CUI__R_CONTROL(ui, h));
+    tn->bg = cui_alpha(CUI_C(ui, HOVER), hv * 1.4f);
+    cui__mark_interactive(ui, n, CUI_IF_FOCUSABLE);
+    if (r.hovered) cui__set_cursor(ui, CUI_CURSOR_HAND);
+    cui__open(ui, n);
+    int ht = cui__text_node(ui, text, -1, CUI_FONT_MEDIUM, cui__fs(ui, ui->theme.text_body + 1), CUI_C(ui, FOREGROUND), false);
     ui->nodes[ht].line_height = 1.3f;
-    ui->nodes[ht].w = CUI_FILL;
+    ui->nodes[ht].flags |= CUI_NF_TABULAR;
+    cui__icon_node(ui, icon, 14, CUI_C(ui, TEXT_MUTED));
+    cui__close(ui);
+    if (r.focus_visible) {
+        float *fa = cui__frame_alloc(ui, sizeof(float));
+        *fa = 1;
+        ui->nodes[n].paint_data = fa;
+        ui->nodes[n].paint = cui__paint_focus_ring_node;
+        ui->nodes[n].flags |= CUI_NF_PAINT_AFTER;
+    }
+    ui->last_id = tid;
+    cui_tooltip(ui, tip);
+    return r.clicked;
+}
+
+/** The title and the buttons that turn the page: a month, a year or twelve years. */
+static void cui__calendar_head(cui_ctx *ui, cui__calendar_build *b) {
+    cui__cal_state *st = b->st;
+    int head = cui__node_new(ui, 0);
+    ui->nodes[head].dir = CUI_ROW; ui->nodes[head].gap = 2; ui->nodes[head].align = CUI_ALIGN_CENTER;
+    cui__open(ui, head);
+    const char *text, *icon = CUI_ICON_CHEVRON_DOWN, *tip, *prev, *next;
+    int step;
+    if (st->mode == CUI__CAL_YEARS) {
+        text = cui__frame_printf(ui, "%d \xe2\x80\x93 %d", st->year0, st->year0 + 11);
+        icon = CUI_ICON_CHEVRON_UP; tip = "Back to the days"; prev = "Earlier years"; next = "Later years"; step = 12;
+    } else if (st->mode == CUI__CAL_MONTHS) {
+        text = cui__frame_printf(ui, "%d", st->view_y);
+        tip = "Choose a year"; prev = "Previous year"; next = "Next year"; step = 12;
+    } else {
+        text = cui__frame_printf(ui, "%s %d", cui__month_name(ui, st->view_m - 1), st->view_y);
+        tip = "Choose a month and year"; prev = "Previous month"; next = "Next month"; step = 1;
+    }
+    if (cui__calendar_title(ui, b, text, icon, tip)) {
+        if (st->mode == CUI__CAL_DAYS) st->mode = CUI__CAL_MONTHS;
+        else if (st->mode == CUI__CAL_MONTHS) { st->mode = CUI__CAL_YEARS; st->year0 = st->view_y - ((st->view_y % 12) + 12) % 12; }
+        else st->mode = CUI__CAL_DAYS;
+    }
+    int fill = cui__node_new(ui, 0);
+    ui->nodes[fill].w = CUI_FILL;
     cui_button_opts bo;
     memset(&bo, 0, sizeof bo);
     bo.size = CUI_SIZE_SM;
-    bo.tooltip = "Previous month";
-    if (cui_icon_button_ex(ui, CUI_ICON_CHEVRON_LEFT, &bo)) { if (--st->view_m < 1) { st->view_m = 12; st->view_y--; } }
-    bo.tooltip = "Next month";
-    if (cui_icon_button_ex(ui, CUI_ICON_CHEVRON_RIGHT, &bo)) { if (++st->view_m > 12) { st->view_m = 1; st->view_y++; } }
+    int turn = 0;   /* the arrows keep their ids in every view, so the focus stays on them */
+    bo.tooltip = prev;
+    if (cui__icon_button_id(ui, cui__hash_str("#prev", b->id), CUI_ICON_CHEVRON_LEFT, &bo)) turn = -1;
+    bo.tooltip = next;
+    if (cui__icon_button_id(ui, cui__hash_str("#next", b->id), CUI_ICON_CHEVRON_RIGHT, &bo)) turn = 1;
+    if (turn && st->mode == CUI__CAL_YEARS) st->year0 += turn * step;
+    else if (turn && st->mode == CUI__CAL_MONTHS) st->view_y += turn;
+    else if (turn) {
+        st->view_m += turn;
+        if (st->view_m < 1) { st->view_m = 12; st->view_y--; }
+        if (st->view_m > 12) { st->view_m = 1; st->view_y++; }
+    }
     cui__close(ui);
+}
+
+/** Twelve months or twelve years in four rows, as tall as the days so the calendar keeps its size. */
+static void cui__calendar_picks(cui_ctx *ui, cui__calendar_build *b) {
+    cui__cal_state *st = b->st;
+    bool years = st->mode == CUI__CAL_YEARS;
+    float days_h = cui__fs(ui, ui->theme.text_sm) * 2.0f + 6 * b->cs + 6 * 2;
+    float gap = 4, slot_h = (days_h - 3 * gap) / 4, pill_h = CUI_MIN(36, slot_h);
+    cui_box gb;
+    memset(&gb, 0, sizeof gb);
+    gb.dir = CUI_GRID; gb.columns = 3; gb.gap = gap;
+    int grid = cui__node_new(ui, 0);
+    cui__apply_box(ui, &ui->nodes[grid], &gb);
+    cui__open(ui, grid);
+    for (int k = 0; k < 12; k++) {
+        int y = years ? st->year0 + k : st->view_y, m = years ? 0 : k + 1;
+        int key = years ? -y : y * 100 + m;   /* apart from the days' keys */
+        cui_id pid = cui__hash(&key, sizeof key, b->id ^ 0x9E3779B9u);
+        cui_interact r = cui__interact(ui, pid, CUI_IF_FOCUSABLE);
+        float hv = cui__hover_fade(ui, pid, r.hovered, CUI__T_HOVER);
+        bool sel = b->value && b->value->year == y && (years || b->value->month == m);
+        bool now = b->today.year == y && (years || b->today.month == m);
+        int slot = cui__node_new(ui, 0);
+        ui->nodes[slot].h = CUI_PX(slot_h);
+        ui->nodes[slot].justify = CUI_JUSTIFY_CENTER;
+        cui__open(ui, slot);
+        int c = cui__node_new(ui, pid);
+        cui_node *cn = &ui->nodes[c];
+        cn->h = CUI_PX(pill_h);
+        cn->dir = CUI_ROW; cn->align = CUI_ALIGN_CENTER; cn->justify = CUI_JUSTIFY_CENTER;
+        cn->radius = CUI_CORNERS(pill_h / 2);
+        cn->bg = sel ? CUI_C(ui, CONTROL_ON) : cui_alpha(CUI_C(ui, HOVER), hv * 1.4f);
+        if (now && !sel) { cn->border = 1; cn->border_color = CUI_C(ui, BORDER_STRONG); }
+        cui__mark_interactive(ui, c, CUI_IF_FOCUSABLE);
+        if (r.hovered) cui__set_cursor(ui, CUI_CURSOR_HAND);
+        cui__open(ui, c);
+        const char *label = years ? cui__frame_printf(ui, "%d", y) : cui__month_short(ui, k);
+        int t = cui__text_node(ui, label, -1, (sel || now) ? CUI_FONT_MEDIUM : CUI_FONT_BODY, cui__fs(ui, ui->theme.text_body),
+                               sel ? CUI_C(ui, CONTROL_GLYPH) : CUI_C(ui, FOREGROUND), false);
+        ui->nodes[t].line_height = 1.0f;
+        ui->nodes[t].flags |= CUI_NF_TABULAR;
+        cui__close(ui);
+        if (r.focus_visible) {
+            float *fa = cui__frame_alloc(ui, sizeof(float));
+            *fa = 1;
+            ui->nodes[c].paint_data = fa;
+            ui->nodes[c].paint = cui__paint_focus_ring_node;
+            ui->nodes[c].flags |= CUI_NF_PAINT_AFTER;
+        }
+        cui__close(ui);
+        if (r.clicked) {
+            if (years) { st->view_y = y; st->mode = CUI__CAL_MONTHS; }
+            else { st->view_m = m; st->mode = CUI__CAL_DAYS; }
+            if (r.keyboard_activate) ui->focus = cui__hash_str("#title", b->id);   /* the keys go on from the title */
+        }
+    }
+    cui__close(ui);
+}
+
+/** The weekday names and six weeks of days. */
+static void cui__calendar_days(cui_ctx *ui, cui__calendar_build *b) {
+    cui__cal_state *st = b->st;
+    cui_date *value = b->value, today = b->today;
+    float cs = b->cs;
     cui_box gb;
     memset(&gb, 0, sizeof gb);
     gb.dir = CUI_GRID; gb.columns = 7; gb.gap = 2;
@@ -1026,7 +1282,7 @@ bool cui_calendar(cui_ctx *ui, const char *id_str, cui_date *value) {
         if (day < 1) { day += pdim; m = pm; y = py; outside = true; }
         else if (day > dim) { day -= dim; m = st->view_m == 12 ? 1 : st->view_m + 1; y = st->view_m == 12 ? st->view_y + 1 : st->view_y; outside = true; }
         int key = y * 10000 + m * 100 + day;
-        cui_id did = cui__hash(&key, sizeof key, id);
+        cui_id did = cui__hash(&key, sizeof key, b->id);
         cui_interact r = cui__interact(ui, did, CUI_IF_FOCUSABLE);
         float hv_v = cui__hover_fade(ui, did, r.hovered, CUI__T_HOVER), *hv = &hv_v;
         bool sel = value && value->year == y && value->month == m && value->day == day;
@@ -1058,15 +1314,42 @@ bool cui_calendar(cui_ctx *ui, const char *id_str, cui_date *value) {
         if (r.clicked && value) {
             value->year = y; value->month = m; value->day = day;
             if (outside) { st->view_y = y; st->view_m = m; }
-            changed = true;
+            b->changed = true;
         }
     }
     cui__close(ui);
-    cui__close(ui);
-    cui_pop_id(ui);
-    return changed;
 }
 
+bool cui_calendar(cui_ctx *ui, const char *id_str, cui_date *value) {
+    cui_id id = cui_make_id(ui, id_str);
+    cui__cal_state *st = cui_state(ui, id, sizeof *st);
+    cui__calendar_build b = { id, st, value, cui_date_today(), 34, false };
+    if (!st->init) {
+        cui_date base = (value && value->year) ? *value : b.today;
+        st->view_y = base.year; st->view_m = base.month; st->init = true;
+    }
+    if (st->built + 1 != ui->frame) st->mode = CUI__CAL_DAYS;   /* hidden last frame: it opens on the days again */
+    st->built = ui->frame;
+    cui_push_id(ui, id_str);
+    /* 34px day cells, down to 28 when the parent is narrow (phones) */
+    cui_rect cpr = cui__prev_rect(ui, id);
+    float cs = cpr.w > 0 ? floorf((cpr.w - 12) / 7) : 34;
+    b.cs = cs > 34 ? 34 : cs < 28 ? 28 : cs;
+    int col = cui__node_new(ui, id);
+    ui->nodes[col].gap = 8;
+    cui__soft_width(&ui->nodes[col], CUI_FIT, 7 * 34 + 6 * 2);
+    ui->nodes[col].min_w = 7 * 28 + 6 * 2;
+    ui->nodes[col].flags |= CUI_NF_ADAPTIVE;
+    cui__open(ui, col);
+    cui__calendar_head(ui, &b);
+    if (st->mode == CUI__CAL_DAYS) cui__calendar_days(ui, &b);
+    else cui__calendar_picks(ui, &b);
+    cui__close(ui);
+    cui_pop_id(ui);
+    return b.changed;
+}
+
+/** Draw the date trigger with a focus ring when reached by keyboard. */
 bool cui_date_picker_ex(cui_ctx *ui, const char *id_str, cui_date *value, const cui_date_opts *o) {
     cui_date_opts d;
     memset(&d, 0, sizeof d);
@@ -1110,6 +1393,7 @@ bool cui_date_picker_ex(cui_ctx *ui, const char *id_str, cui_date *value, const 
     ui->nodes[t].w = CUI_FILL;
     cui__close(ui);
     if (col >= 0) cui__close(ui);
+    cui__focus_ring(ui, i, r.focus_visible ? 1.0f : 0.0f);
     ui->last_id = id;
     bool changed = false;
     if (cui__popup_begin(ui, pid, id, CUI_PLACE_BOTTOM_START, 0, 12, 0, false)) {
@@ -1123,7 +1407,7 @@ bool cui_date_picker_ex(cui_ctx *ui, const char *id_str, cui_date *value, const 
 /* Color picker                                                             */
 /* ------------------------------------------------------------------------ */
 
-typedef struct { float h, s, v; bool init; char hex[16]; } cui__color_state;
+typedef struct { float h, s, v; bool init; cui_color last; char hex[16]; } cui__color_state;
 
 static void cui__rgb_to_hsv(cui_color c, float *h, float *s, float *v) {
     float r = c.r / 255.0f, g = c.g / 255.0f, b = c.b / 255.0f;
@@ -1195,17 +1479,22 @@ void cui__color_picker_open(cui_ctx *ui, cui_id id, cui_color value) {
     cui__color_state *st = cui_state(ui, id, sizeof *st);
     cui__rgb_to_hsv(value, &st->h, &st->s, &st->v);
     st->init = true;
+    st->last = value;
     cui__popup_set(ui, id ^ 0xC010Eu, true);
     cui_popup *p = cui__popup_get(ui, id ^ 0xC010Eu, false);
     if (p) p->at_mouse = false;
 }
 
+/** Draw the color trigger and reconcile its HSV controls with the caller's RGB. */
 bool cui_color_picker(cui_ctx *ui, const char *id_str, cui_color *value) {
     cui_id id = cui_make_id(ui, id_str);
     cui_id pid = id ^ 0xC010Eu;
     cui__color_state *st = cui_state(ui, id, sizeof *st);
     cui_color old = *value;
-    if (!st->init) { cui__rgb_to_hsv(*value, &st->h, &st->s, &st->v); st->init = true; }
+    if (!st->init || old.r != st->last.r || old.g != st->last.g || old.b != st->last.b) {
+        cui__rgb_to_hsv(old, &st->h, &st->s, &st->v);
+        st->init = true;
+    }
     cui_popup *p = cui__popup_get(ui, pid, true);
     cui_interact r = cui__interact(ui, id, CUI_IF_FOCUSABLE);
     if (r.clicked && p) {
@@ -1236,6 +1525,7 @@ bool cui_color_picker(cui_ctx *ui, const char *id_str, cui_color *value) {
                            cui__fs(ui, ui->theme.text_body), CUI_C(ui, FOREGROUND), false);
     ui->nodes[t].line_height = 1.3f;
     cui__close(ui);
+    cui__focus_ring(ui, i, r.focus_visible ? 1.0f : 0.0f);
     ui->last_id = id;
     if (cui__popup_begin(ui, pid, id, CUI_PLACE_BOTTOM_START, 240, 12, 12, false)) {
         cui_id svid = cui_make_id(ui, "#sv"), hid = cui_make_id(ui, "#hue");
@@ -1247,7 +1537,10 @@ bool cui_color_picker(cui_ctx *ui, const char *id_str, cui_color *value) {
             st->v = 1 - cui__clampf((ui->my - svr.y) / svr.h, 0, 1);
         }
         if (hr.active && ui->mdown[0] && hrr.w > 0) st->h = cui__clampf((ui->mx - hrr.x) / hrr.w, 0, 0.9999f) * 360.0f;
-        if ((sr.active || hr.active) && ui->mdown[0]) *value = cui__hsv(st->h, st->s, st->v);
+        if ((sr.active || hr.active) && ui->mdown[0]) {
+            *value = cui__hsv(st->h, st->s, st->v);
+            value->a = old.a;
+        }
         int svn = cui__leaf(ui, svid, CUI_FILL, CUI_PX(150));
         cui__mark_interactive(ui, svn, 0);
         cui__sv_paint *sp = cui__frame_alloc(ui, sizeof *sp);
@@ -1276,11 +1569,12 @@ bool cui_color_picker(cui_ctx *ui, const char *id_str, cui_color *value) {
             if (same) { ui->nodes[c].border = 2; ui->nodes[c].border_color = CUI_C(ui, SURFACE_RAISED); ui->nodes[c].elevation = CUI_ELEVATION_RESTING; }
             cui__mark_interactive(ui, c, 0);
             if (cr.hovered) cui__set_cursor(ui, CUI_CURSOR_HAND);
-            if (cr.clicked) { *value = pc; cui__rgb_to_hsv(pc, &st->h, &st->s, &st->v); }
+            if (cr.clicked) { pc.a = old.a; *value = pc; cui__rgb_to_hsv(pc, &st->h, &st->s, &st->v); }
         }
         cui__close(ui);
         cui__popup_end(ui);
     }
+    st->last = *value;
     return memcmp(&old, value, sizeof old) != 0;
 }
 
@@ -1311,6 +1605,7 @@ static int cui__fuzzy(const char *text, const char *q) {
     return score;
 }
 
+/** Keep the exit transition visible without accepting commands from it. */
 int cui_command_palette(cui_ctx *ui, bool *open, const cui_command *cmds, int count) {
     cui_id id = cui_make_id(ui, "#command-palette");
     cui__palette_state *st = cui_state(ui, id, sizeof *st);
@@ -1327,8 +1622,9 @@ int cui_command_palette(cui_ctx *ui, bool *open, const cui_command *cmds, int co
         if (cui_key_pressed(ui, CUI_KEY_ESCAPE)) { *open = false; ui->kpressed[CUI_KEY_ESCAPE] = 0; }
         if (ui->mreleased[0] && ui->hot == scrim_id && ui->active == scrim_id) *open = false;
     }
+    is_open = open && *open && !cui_is_disabled(ui);
     cui__interact(ui, scrim_id, 0);
-    if (is_open) { ui->modal_layer = id; ui->modal_z = 0x7FFF0000; }
+    if (is_open) ui->modal = (cui_modal_layer){ id, 0x7FFF0000 };
     int root = cui__float_begin(ui, id, 0x7FFF0000, 0, CUI__PLACE_FULL, 0);
     cui_node *rn = &ui->nodes[root];
     rn->id = scrim_id;
@@ -1382,7 +1678,7 @@ int cui_command_palette(cui_ctx *ui, bool *open, const cui_command *cmds, int co
             order[b + 1] = o2; scores[b + 1] = s2;
         }
     }
-    if (n > 0) {
+    if (is_open && n > 0) {
         if (cui_key_pressed(ui, CUI_KEY_DOWN)) st->highlight = (st->highlight + 1) % n;
         if (cui_key_pressed(ui, CUI_KEY_UP)) st->highlight = (st->highlight + n - 1) % n;
         if (st->highlight >= n) st->highlight = n - 1;
@@ -1425,7 +1721,7 @@ int cui_command_palette(cui_ctx *ui, bool *open, const cui_command *cmds, int co
         ui->nodes[tt].w = CUI_FILL;
         if (c->shortcut) cui_kbd(ui, c->shortcut);
         cui__close(ui);
-        if (hl && cui__has_prev_rect(ui, cid)) {
+        if (is_open && hl && cui__has_prev_rect(ui, cid)) {
             /* keep the highlighted row visible */
             cui_scroll_state *ss = cui_state(ui, list_id, sizeof *ss);
             cui_rect rr = cui__prev_rect(ui, cid), lr = cui__prev_rect(ui, list_id);
@@ -1434,7 +1730,7 @@ int cui_command_palette(cui_ctx *ui, bool *open, const cui_command *cmds, int co
                 if (rr.y < lr.y) ss->ty -= lr.y - rr.y + 6;
             }
         }
-        if (r.clicked || (hl && cui_key_pressed(ui, CUI_KEY_ENTER))) chosen = order[j];
+        if (is_open && (r.clicked || (hl && cui_key_pressed(ui, CUI_KEY_ENTER)))) chosen = order[j];
     }
     if (n == 0) {
         int e = cui__node_new(ui, 0);

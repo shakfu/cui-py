@@ -96,7 +96,12 @@ static void cui__paint_edit(cui_ctx *ui, cui_node *n, void *data) {
             float cx = x + cui__x_at(ui, p, p->buf, p->len, p->cursor);
             if (p->cursor == 0) cx -= 1.0f;   /* stand clear of the first glyph or the placeholder */
             cui_rect cr = { roundf(cx * ui->scale) / ui->scale - 0.5f, r.y + (r.h - fh) * 0.5f, 1.5f, fh };
+            /* At offset 0 the bar sits left of the text clip (that is where "stand clear of
+             * the first glyph" puts it), so draw it against the field's clip instead. */
+            bool outside = cr.x < r.x;
+            if (outside) cui_pop_clip(ui);
             cui_draw_rect(ui, cr, CUI_CORNERS(0.75f), cui_alpha(p->caret, a));
+            if (outside) cui_push_clip(ui, r);
         }
     } else {
         float y0 = r.y - p->scroll_y;
@@ -133,6 +138,22 @@ static void cui__paint_edit(cui_ctx *ui, cui_node *n, void *data) {
     }
     cui_pop_clip(ui);
     ui->text_unshaped = unshaped;
+}
+
+/** Give the editor the wheel only in directions it could scroll after layout. */
+static void cui__paint_scrollable_edit(cui_ctx *ui, cui_node *n, void *data) {
+    const cui__edit_paint *p = data;
+    cui__paint_edit(ui, n, data);
+    const float bottom = p->line_count * p->line_h - n->rect.h;
+    uint32_t wheel = p->scroll_y > 0.5f ? CUI_HIT_WHEEL_UP : 0;
+    if (bottom - p->scroll_y > 0.5f) wheel |= CUI_HIT_WHEEL_DOWN;
+    if (wheel) {
+        const cui_rect clip = ui->dl.clip_stack[ui->dl.clip_depth - 1];
+        const float s = ui->scale;
+        const cui_rect visible = { clip.x / s, clip.y / s, clip.w / s, clip.h / s };
+        const cui_rect field = cui__xform_rect(ui, ui->nodes[n->parent].rect);
+        cui__paint_add_hit(ui, n->id, cui__rect_intersect(field, visible), wheel);
+    }
 }
 
 /* ---- editing primitives ---- */
@@ -494,11 +515,19 @@ static void cui__edit_follow_caret(cui__edit_frame *c, const cui__edit_result *r
     if (ui->platform.set_text_input_rect) {
         cui_rect cr = area;
         if (!c->multiline) cr.x = area.x + cui__x_at(ui, &c->measure, c->buf, len, e->cursor) - e->scroll_x;
+        else if (c->nlines > 0) {   /* the caret's line, so the candidate list opens under it, not under the whole area */
+            int ln = cui__line_of(c->lines, c->nlines, e->cursor);
+            const cui_text_layout_line *L = &c->lines[ln];
+            cr.x = area.x + cui__text_width(ui, c->font, c->size, c->buf + L->start, e->cursor - L->start, false);
+            cr.y = area.y + (float)ln * c->line_h - e->scroll_y;
+            cr.h = c->line_h;
+        }
         cr.w = 1;
         ui->platform.set_text_input_rect(ui->platform.user, cr);
     }
 }
 
+/** Report focus loss in the same frame so a second Escape can reach a dialog. */
 static cui__edit_result cui__edit_logic(cui_ctx *ui, cui_id id, cui_edit_state *e, char *buf, size_t cap,
                                         bool multiline, bool password, bool read_only, cui_rect area,
                                         cui_font font, float size, float line_h, cui_interact r) {
@@ -546,7 +575,13 @@ static cui__edit_result cui__edit_logic(cui_ctx *ui, cui_id id, cui_edit_state *
     if ((!multiline || c.prim) && cui_key_pressed(ui, CUI_KEY_ENTER)) res.submitted = true;
     if (cui_key_pressed(ui, CUI_KEY_ESCAPE)) {
         if (e->cursor != e->anchor) e->anchor = e->cursor;
-        else { ui->focus = 0; res.blurred = true; }
+        else {
+            ui->focus = 0;
+            ui->edit = NULL;
+            e->had_focus = false;
+            res.focused = false;
+            res.blurred = true;
+        }
     }
     if (c.edited) res.changed = true;
     if (c.edited || c.moved) ui->caret_time = ui->time;
@@ -569,6 +604,7 @@ static void cui__edit_dtor(cui_ctx *ui, void *data) {
     e->undo_count = 0;
 }
 
+/** Build the editor and its chrome with a shared disabled state. */
 int cui__text_field(cui_ctx *ui, cui_id id, char *buf, size_t cap, const cui_input_opts *o, bool multiline, int style, const char *search_icon) {
     cui_input_opts d;
     memset(&d, 0, sizeof d);
@@ -609,13 +645,13 @@ int cui__text_field(cui_ctx *ui, cui_id id, char *buf, size_t cap, const cui_inp
     bool password = o->password && !e->show_password;
     cui__edit_result er = cui__edit_logic(ui, id, e, buf, cap, multiline, password, o->read_only || disabled, area,
                                           font, size, line_h, rf);
-    if (multiline && rf.hovered && ui->scroll_dy != 0 && area.h > 0) {
+    float wheel = multiline && !disabled && area.h > 0 ? cui__take_vertical_wheel(ui, area_id) : 0;
+    if (wheel != 0) {
         /* wheel scrolls the text whether or not the field has focus */
         cui_text_layout_line *wl = NULL;
         int wn = cui__edit_lines(ui, font, size, buf, (int)strlen(buf), area.w, &wl);
         float total = wn * line_h;
-        e->scroll_y = cui__clampf(e->scroll_y - ui->scroll_dy * 40, 0, CUI_MAX(0, total - area.h));
-        ui->scroll_dy = 0;
+        e->scroll_y = cui__clampf(e->scroll_y - wheel * 40, 0, CUI_MAX(0, total - area.h));
     }
     int flags = 0;
     if (er.changed) flags |= CUI_CHANGED;
@@ -706,7 +742,7 @@ int cui__text_field(cui_ctx *ui, cui_id id, char *buf, size_t cap, const cui_inp
         cui_rect a = area;
         p->line_count = cui__edit_lines(ui, font, size, p->buf, len, a.w > 0 ? a.w : 200, &p->lines);
     }
-    an_->paint = cui__paint_edit;
+    an_->paint = multiline && !disabled ? cui__paint_scrollable_edit : cui__paint_edit;
     an_->paint_data = p;
     if (p->focused) cui__wakeup_after(ui, 0.53f);
 
@@ -742,6 +778,7 @@ int cui__text_field(cui_ctx *ui, cui_id id, char *buf, size_t cap, const cui_inp
         bo.size = CUI_SIZE_SM;
         bo.color = CUI_COLOR_TEXT_MUTED;   /* quiet like the field's leading icon */
         bo.tooltip = e->show_password ? "Hide password" : "Show password";
+        bo.disabled = disabled;
         cui_push_id_int(ui, (int)id);
         if (cui_icon_button_ex(ui, e->show_password ? CUI_ICON_EYE_OFF : CUI_ICON_EYE, &bo)) e->show_password = !e->show_password;
         cui_pop_id(ui);
@@ -786,8 +823,9 @@ int cui_search_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_
 
 /* ---- number field ---- */
 
-typedef struct { char text[64]; double last; bool init; bool editing; } cui__number_state;
+typedef struct { char text[64]; double last; bool init; } cui__number_state;
 
+/** Accept complete finite values and reconcile the draft when editing ends. */
 bool cui_number_ex(cui_ctx *ui, const char *id_str, double *value, double min, double max, const cui_number_opts *o) {
     cui_number_opts d;
     memset(&d, 0, sizeof d);
@@ -819,14 +857,10 @@ bool cui_number_ex(cui_ctx *ui, const char *id_str, double *value, double min, d
     memset(&io, 0, sizeof io);
     io.disabled = o->disabled;
     int f = cui__text_field(ui, id, st->text, sizeof st->text, &io, false, CUI__FIELD_BOXED, NULL);
-    cui_node *box = &ui->nodes[ui->last_node];
-    (void)box;
-    /* find the field node (id) to add steppers inside its row */
-    bool commit = (f & CUI_SUBMITTED) || (focused && ui->focus != id);
     if (f & CUI_CHANGED) {
         char *end = NULL;
         double v = strtod(st->text, &end);
-        if (end != st->text) { *value = v; }
+        if (end != st->text && *end == 0 && isfinite(v)) *value = v;
     }
     if (ui->focus == id) {
         if (cui_key_pressed(ui, CUI_KEY_UP)) *value += step * ((ui->mods & CUI_MOD_SHIFT) ? 10 : 1);
@@ -864,12 +898,19 @@ bool cui_number_ex(cui_ctx *ui, const char *id_str, double *value, double min, d
     if (col >= 0) cui__close(ui);
     if (*value < min) *value = min;
     if (*value > max) *value = max;
-    if (*value != old || commit) {
-        if (ui->focus != id || *value != old) {
-            if (!(f & CUI_CHANGED)) snprintf(st->text, sizeof st->text, "%.*f", o->decimals, *value);
+    if ((f & (CUI_SUBMITTED | CUI_BLURRED)) || (*value != old && !(f & CUI_CHANGED))) {
+        char canonical[sizeof st->text];
+        snprintf(canonical, sizeof canonical, "%.*f", o->decimals, *value);
+        if (strcmp(st->text, canonical) != 0) {
+            const int len = (int)strlen(canonical);
+            memcpy(st->text, canonical, (size_t)len + 1);
+            cui_edit_state *edit = cui_state(ui, id, sizeof *edit);
+            edit->cursor = edit->anchor = len;
+            edit->scroll_x = 0;
+            cui_request_redraw(ui);   /* the field was built with the draft: show the value next frame, even when idle */
         }
-        st->last = *value;
     }
+    st->last = *value;
     ui->last_id = id;
     return *value != old;
 }

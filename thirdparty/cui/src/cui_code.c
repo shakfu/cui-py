@@ -36,6 +36,24 @@ static const char *const kw_go[] = { "func", "package", "import", "var", "const"
 static const char *const ty_go[] = { "int", "int64", "int32", "uint", "uint64", "float64", "float32", "string", "bool", "byte", "rune", "error", NULL };
 static const char *const kw_sh[] = { "if", "then", "else", "elif", "fi", "for", "in", "do", "done", "while", "case", "esac", "function",
                                      "return", "export", "local", "echo", "cd", "sudo", "cmake", "make", "git", "apt", "brew", NULL };
+static const char *const kw_sql[] = { "select", "from", "where", "and", "or", "not", "in", "is", "as", "on", "join", "inner", "left",
+                                      "right", "full", "outer", "cross", "natural", "using", "group", "by", "order", "having", "limit",
+                                      "offset", "fetch", "first", "next", "rows", "only", "union", "all", "intersect", "except",
+                                      "distinct", "insert", "into", "values", "update", "set", "delete", "create", "table", "view",
+                                      "index", "unique", "primary", "key", "foreign", "references", "constraint", "check", "default",
+                                      "alter", "add", "drop", "column", "rename", "to", "if", "exists", "cascade", "restrict",
+                                      "truncate", "begin", "commit", "rollback", "transaction", "savepoint", "with", "recursive",
+                                      "case", "when", "then", "else", "end", "like", "ilike", "between", "asc", "desc", "nulls",
+                                      "over", "partition", "window", "filter", "within", "returning", "conflict", "do", "nothing",
+                                      "replace", "explain", "analyze", "grant", "revoke", "materialized", "temporary", "temp",
+                                      "schema", "database", "trigger", "function", "procedure", "returns", "language", "declare",
+                                      "lateral", "cast", "any", "some", "qualify", "pivot", "unpivot", "summarize", "pragma",
+                                      "vacuum", "attach", "detach", "copy", "show", "describe", NULL };
+static const char *const ty_sql[] = { "integer", "int", "smallint", "bigint", "tinyint", "hugeint", "decimal", "numeric", "real",
+                                      "float", "double", "precision", "boolean", "bool", "char", "varchar", "text", "string", "date",
+                                      "time", "timestamp", "timestamptz", "interval", "uuid", "json", "jsonb", "blob", "bytea",
+                                      "serial", "bigserial", "money", "xml", "array", "map", "struct", NULL };
+static const char *const const_sql[] = { "null", "true", "false", NULL };
 static const char *const none[] = { NULL };
 
 cui__lang cui__lang_for(const char *lang) {
@@ -53,14 +71,28 @@ cui__lang cui__lang_for(const char *lang) {
         l.kw = kw_go; l.types = ty_go; l.line_comment = "//"; l.block_comments = true; l.backtick = true;
     } else if (!strcmp(lang, "shell") || !strcmp(lang, "sh") || !strcmp(lang, "bash")) {
         l.kw = kw_sh; l.line_comment = "#"; l.no_caps_types = true;
+    } else if (!strcmp(lang, "sql")) {
+        l.kw = kw_sql; l.types = ty_sql; l.consts = const_sql; l.line_comment = "--"; l.block_comments = true;
+        l.no_caps_types = true; l.fold_case = true;
     } else if (!strcmp(lang, "text") || !strcmp(lang, "plain")) {
         l.plain = true;
     }
     return l;
 }
 
-static bool cui__in_list(const char *const *list, const char *s, int n) {
-    for (int k = 0; list[k]; k++) if ((int)strlen(list[k]) == n && strncmp(list[k], s, (size_t)n) == 0) return true;
+/* fold: the word matches in any case (the lists are lowercase) */
+static bool cui__in_list(const char *const *list, const char *s, int n, bool fold) {
+    for (int k = 0; list[k]; k++) {
+        if ((int)strlen(list[k]) != n) continue;
+        int j = 0;
+        while (j < n) {
+            char c = s[j];
+            if (fold && c >= 'A' && c <= 'Z') c = (char)(c + 32);
+            if (list[k][j] != c) break;
+            j++;
+        }
+        if (j == n) return true;
+    }
     return false;
 }
 static bool cui__ident_start(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_' || (unsigned char)c >= 0x80; }
@@ -114,8 +146,9 @@ int cui__tokenize(const cui__lang *L, bool json, const char *s, int n, bool *in_
             int len = i - st;
             int kind = TK_TEXT;
             if (json) kind = TK_CONST;
-            else if (cui__in_list(L->kw, s + st, len)) kind = TK_KEYWORD;
-            else if (cui__in_list(L->types, s + st, len)) kind = TK_TYPE;
+            else if (cui__in_list(L->kw, s + st, len, L->fold_case)) kind = TK_KEYWORD;
+            else if (cui__in_list(L->types, s + st, len, L->fold_case)) kind = TK_TYPE;
+            else if (L->consts && cui__in_list(L->consts, s + st, len, L->fold_case)) kind = TK_CONST;
             else if ((len == 4 && (!strncmp(s + st, "true", 4) || !strncmp(s + st, "NULL", 4) || !strncmp(s + st, "None", 4) || !strncmp(s + st, "null", 4))) ||
                      (len == 5 && (!strncmp(s + st, "false", 5) || !strncmp(s + st, "False", 5))) || (len == 4 && !strncmp(s + st, "True", 4)))
                 kind = TK_CONST;
@@ -338,17 +371,64 @@ typedef struct { const char *s; int n, i; cui__jnode *nodes; int count, cap; con
 static void cui__jws(cui__jparse *p) { while (p->i < p->n && (p->s[p->i] == ' ' || p->s[p->i] == '\t' || p->s[p->i] == '\n' || p->s[p->i] == '\r')) p->i++; }
 static bool cui__jfail(cui__jparse *p, const char *msg) { if (!p->err) { p->err = msg; p->err_at = p->i; } return false; }
 
+/** Consume a JSON escape, including the four digits of a Unicode escape. */
+static bool cui__jescape(cui__jparse *p) {
+    if (++p->i >= p->n) return cui__jfail(p, "incomplete string escape");
+    char escape = p->s[p->i];
+    if (escape != 'u' && !strchr("\"\\/bfnrt", escape)) return cui__jfail(p, "invalid string escape");
+    p->i++;
+    if (escape != 'u') return true;
+    for (int k = 0; k < 4; k++, p->i++) {
+        if (p->i >= p->n || !strchr("0123456789abcdefABCDEF", p->s[p->i]))
+            return cui__jfail(p, "expected four hexadecimal digits in Unicode escape");
+    }
+    return true;
+}
+
+/** Scan a JSON string and return its original byte range without the quotes. */
 static bool cui__jstring(cui__jparse *p, int *start, int *len) {
     if (p->i >= p->n || p->s[p->i] != '"') return cui__jfail(p, "expected a string");
     int st = ++p->i;
     while (p->i < p->n && p->s[p->i] != '"') {
-        if (p->s[p->i] == '\\') p->i++;
-        else if ((unsigned char)p->s[p->i] < 0x20) return cui__jfail(p, "control character in string");
-        p->i++;
+        if (p->s[p->i] == '\\') {
+            if (!cui__jescape(p)) return false;
+        } else {
+            if ((unsigned char)p->s[p->i] < 0x20) return cui__jfail(p, "control character in string");
+            p->i++;
+        }
     }
     if (p->i >= p->n) return cui__jfail(p, "unterminated string");
     *start = st; *len = p->i - st;
     p->i++;
+    return true;
+}
+
+/** JSON numbers use ASCII digits regardless of the current locale. */
+static bool cui__jdigit(const cui__jparse *p) {
+    return p->i < p->n && p->s[p->i] >= '0' && p->s[p->i] <= '9';
+}
+
+/** Validate the integer, optional fraction, and optional exponent in a JSON number. */
+static bool cui__jnumber(cui__jparse *p) {
+    if (p->s[p->i] == '-') p->i++;
+    if (!cui__jdigit(p)) return cui__jfail(p, "expected an integer digit");
+    if (p->s[p->i] == '0') {
+        p->i++;
+        if (cui__jdigit(p)) return cui__jfail(p, "leading zero in number");
+    } else {
+        do { p->i++; } while (cui__jdigit(p));
+    }
+    if (p->i < p->n && p->s[p->i] == '.') {
+        p->i++;
+        if (!cui__jdigit(p)) return cui__jfail(p, "expected a fractional digit");
+        do { p->i++; } while (cui__jdigit(p));
+    }
+    if (p->i < p->n && (p->s[p->i] == 'e' || p->s[p->i] == 'E')) {
+        p->i++;
+        if (p->i < p->n && (p->s[p->i] == '+' || p->s[p->i] == '-')) p->i++;
+        if (!cui__jdigit(p)) return cui__jfail(p, "expected an exponent digit");
+        do { p->i++; } while (cui__jdigit(p));
+    }
     return true;
 }
 
@@ -363,6 +443,7 @@ static int cui__jnew(cui__jparse *p, int parent, int depth, int key_start, int k
     return p->count++;
 }
 
+/** Parse one JSON value and attach its children and original token ranges. */
 static int cui__jvalue(cui__jparse *p, int parent, int depth, int key_start, int key_len) {
     if (depth > 64) { cui__jfail(p, "nested too deeply"); return -1; }
     cui__jws(p);
@@ -408,9 +489,7 @@ static int cui__jvalue(cui__jparse *p, int parent, int depth, int key_start, int
         return me;
     }
     if (c == '-' || (c >= '0' && c <= '9')) {
-        p->i++;
-        while (p->i < p->n && ((p->s[p->i] >= '0' && p->s[p->i] <= '9') || p->s[p->i] == '.' || p->s[p->i] == 'e' || p->s[p->i] == 'E' ||
-                               p->s[p->i] == '+' || p->s[p->i] == '-')) p->i++;
+        if (!cui__jnumber(p)) return -1;
         p->nodes[me].type = JV_NUM;
     } else if (!strncmp(p->s + p->i, "true", 4) || !strncmp(p->s + p->i, "null", 4)) {
         p->nodes[me].type = p->s[p->i] == 't' ? JV_BOOL : JV_NULL;

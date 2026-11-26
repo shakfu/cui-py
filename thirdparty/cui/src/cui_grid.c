@@ -4,6 +4,7 @@
 #define CUI__GRID_COLS 32
 #define CUI__GRID_HEAD 40.0f
 #define CUI__GRID_CHECK 44.0f
+#define CUI__GRID_SCROLL 0x5C011u   /* salt of the scroll area's id */
 
 typedef struct {
     float widths[CUI__GRID_COLS];
@@ -32,6 +33,8 @@ struct cui_grid_build {
     bool in_row;
     bool clicked_row;
     bool row_double;         /* the current row was double clicked this frame */
+    bool row_pressed;        /* the current row was pressed this frame */
+    bool row_right;          /* the current row was pressed with the right button this frame */
     bool focused;
 };
 
@@ -72,6 +75,7 @@ static void cui__paint_grid_row(cui_ctx *ui, cui_node *n, void *data) {
 
 typedef struct { float hover; } cui__grid_head_paint;
 
+/** Open the grid and return the visible row range for the current row count. */
 bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id_str, const cui_grid_column *cols, int ncols, int nrows,
                             int *first, int *last, const cui_grid_opts *o) {
     cui_grid_opts d;
@@ -82,7 +86,7 @@ bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id_str, const cui_grid_colu
     struct cui_grid_build *b = cui__frame_alloc(ui, sizeof *b);
     memset(b, 0, sizeof *b);
     b->id = cui_make_id(ui, id_str);
-    b->sid = b->id ^ 0x5C011u;
+    b->sid = b->id ^ CUI__GRID_SCROLL;
     b->cols = cols; b->ncols = ncols; b->nrows = nrows; b->o = *o;
     b->row_h = o->row_height > 0 ? o->row_height : 40;
     b->row = -1;
@@ -117,13 +121,11 @@ bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id_str, const cui_grid_colu
     total += b->extra;
     b->total_w = total;
     float view_h = ss->view_h > 0 ? ss->view_h : 400;
-    int f = (int)floorf((ss->y - CUI__GRID_HEAD) / b->row_h) - 2;
-    if (f < 0) f = 0;
-    int l = f + (int)ceilf(view_h / b->row_h) + 5;
-    if (l > nrows) l = nrows;
-    if (f > l) f = l;
-    b->first = f; b->last = l;
-    *first = f; *last = l;
+    /* Keep the scroll position in the new row range before choosing which rows to build. */
+    ss->content_h = CUI__GRID_HEAD + nrows * b->row_h;
+    float max_y = CUI_MAX(0, ss->content_h - ss->view_h);
+    ss->y = CUI_MIN(ss->y, max_y);
+    ss->ty = CUI_MIN(ss->ty, max_y);
     if (cursor_set) {
         float top = CUI__GRID_HEAD + st->cursor * b->row_h, bottom = top + b->row_h;
         if (top - CUI__GRID_HEAD < ss->ty) ss->ty = top - CUI__GRID_HEAD;
@@ -133,7 +135,8 @@ bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id_str, const cui_grid_colu
     /* keyboard: the grid is one tab stop; arrows move the cursor row */
     cui_interact gr = cui__interact(ui, b->id, CUI_IF_FOCUSABLE);
     b->focused = ui->focus == b->id;
-    if (b->focused && nrows > 0 && st->edit_row < 0) {
+    bool keys = b->focused && !cui__keys_covered(ui);   /* an open menu over the grid takes the keys */
+    if (keys && nrows > 0 && st->edit_row < 0) {
         int c = st->cursor < 0 ? 0 : st->cursor;
         int page = (int)(view_h / b->row_h) - 1;
         if (cui_key_pressed(ui, CUI_KEY_DOWN)) c++;
@@ -179,6 +182,14 @@ bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id_str, const cui_grid_colu
     memset(&sb, 0, sizeof sb);
     sb.width = CUI_FILL; sb.height = CUI_FILL;
     cui__scroll_begin_ex(ui, b->sid, &sb, true);
+    /* Input and reduced motion can change the paint offset in this frame. */
+    int f = (int)floorf((ss->y - CUI__GRID_HEAD) / b->row_h) - 2;
+    if (f < 0) f = 0;
+    int l = f + (int)ceilf(view_h / b->row_h) + 5;
+    if (l > nrows) l = nrows;
+    if (f > l) f = l;
+    b->first = f; b->last = l;
+    *first = f; *last = l;
     int content = cui__node_new(ui, 0);
     ui->nodes[content].w = CUI_PX(total);
     ui->nodes[content].gap = 0;
@@ -303,6 +314,8 @@ bool cui_data_grid_row(cui_ctx *ui, int row) {
     bool sel = b->o.selected && b->o.selected[row];
     bool clicked = false;
     b->row_double = r.double_clicked || (r.clicked && ui->click_count >= 2);
+    b->row_pressed = r.hovered && ui->mpressed[0];
+    b->row_right = r.right_clicked;
     if (r.clicked) {
         clicked = true;
         if (st->edit_row < 0) ui->focus = b->id;   /* a cell editor that just opened keeps the focus */
@@ -392,7 +405,7 @@ void cui_data_grid_cell(cui_ctx *ui) {
 void cui_data_grid_cell_text(cui_ctx *ui, const char *text) {
     cui_data_grid_cell(ui);
     struct cui_grid_build *b = ui->building.grid;
-    bool right = b && b->col - 1 < b->ncols && b->cols[b->col - 1].align == CUI_TEXT_RIGHT;
+    bool right = b && b->col >= 1 && b->col - 1 < b->ncols && b->cols[b->col - 1].align == CUI_TEXT_RIGHT;
     /* single line text: cut short, it shows the whole value on hover */
     cui_text_opts to;
     memset(&to, 0, sizeof to);
@@ -423,7 +436,7 @@ bool cui_data_grid_edit(cui_ctx *ui, char *buf, size_t cap) {
         bool over = cui__rect_contains(cr, ui->mx, ui->my);
         bool start = b->row_double && over;
         /* Enter on the cursor row edits its first editable cell */
-        if (!start && b->focused && st->cursor == b->row && st->edit_row < 0 && cui_key_pressed(ui, CUI_KEY_ENTER)) {
+        if (!start && b->focused && st->cursor == b->row && st->edit_row < 0 && cui_key_pressed(ui, CUI_KEY_ENTER) && !cui__keys_covered(ui)) {
             start = true;
             ui->kpressed[CUI_KEY_ENTER] = 0;
         }
@@ -482,6 +495,26 @@ void cui_data_grid_end(cui_ctx *ui) {
     ui->building.grid = NULL;
 }
 
+bool cui__grid_rows_at(cui_ctx *ui, cui_id id, cui_rect *view, float *row0_top) {
+    if (!cui__has_prev_rect(ui, id)) return false;
+    cui_rect r = cui__prev_rect(ui, id);
+    cui_scroll_state *ss = cui_state(ui, id ^ CUI__GRID_SCROLL, sizeof *ss);
+    *view = (cui_rect){ r.x, r.y + CUI__GRID_HEAD, r.w, CUI_MAX(0.0f, r.h - CUI__GRID_HEAD) };
+    *row0_top = r.y + CUI__GRID_HEAD - ss->y;
+    return true;
+}
+
+void cui__grid_scroll_by(cui_ctx *ui, cui_id id, float dy) {
+    cui_scroll_state *ss = cui_state(ui, id ^ CUI__GRID_SCROLL, sizeof *ss);
+    ss->ty = CUI_MAX(0.0f, ss->ty + dy);   /* the grid keeps it below the end */
+    ui->animating = true;
+}
+
+bool cui__grid_row_pressed(cui_ctx *ui, cui_mouse_button button) {
+    struct cui_grid_build *b = ui->building.grid;
+    return b && b->in_row && (button == CUI_MOUSE_RIGHT ? b->row_right : b->row_pressed);
+}
+
 /* ------------------------------------------------------------------------ */
 /* Tree cell                                                                */
 /* ------------------------------------------------------------------------ */
@@ -533,6 +566,7 @@ static int cui__popcount(uint32_t v) { int n = 0; while (v) { n += v & 1; v >>= 
 
 typedef struct { uint32_t active; } cui__filter_bar_state;   /* fields shown as chips even with nothing picked */
 
+/** Draw filter chips and open the new chip's value list when a field is added. */
 bool cui_filter_bar(cui_ctx *ui, const char *id_str, const cui_filter_field *fields, int count, uint32_t *selected,
                     char *search, size_t search_cap) {
     if (count > 32) count = 32;
@@ -627,6 +661,7 @@ bool cui_filter_bar(cui_ctx *ui, const char *id_str, const cui_filter_field *fie
     memset(&mo, 0, sizeof mo);
     mo.icon = CUI_ICON_FILTER; mo.variant = CUI_BUTTON_GHOST;
     int avail = 0;
+    int added = -1;
     for (int k = 0; k < count; k++) if (!selected[k] && !(st->active & (1u << k))) avail++;
     if (avail > 0 && cui_menu_begin(ui, "Filter##add", &mo)) {
         for (int k = 0; k < count; k++) {
@@ -637,13 +672,17 @@ bool cui_filter_bar(cui_ctx *ui, const char *id_str, const cui_filter_field *fie
             cui_push_id_int(ui, k);
             if (cui_menu_item_ex(ui, fields[k].name, &io)) {
                 st->active |= 1u << k;
-                /* open the new chip's value list right away */
-                cui_push_id_int(ui, k);
-                cui_pop_id(ui);
+                added = k;
             }
             cui_pop_id(ui);
         }
         cui_menu_end(ui);
+    }
+    if (added >= 0) {
+        /* Leave the add menu's ID scope before resolving the chip's popup. */
+        cui_push_id_int(ui, added);
+        cui__popup_set(ui, cui_make_id(ui, "chip") ^ 0x3E40u, true);
+        cui_pop_id(ui);
     }
     if (avail > 0) ui->nodes[ui->last_node].h = CUI_PX(30);
     bool any = false;

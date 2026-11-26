@@ -2,7 +2,7 @@
 
 Cython bindings for [CUI](https://github.com/yappologistic/CUI), an immediate-mode UI library in C99 with about 190 components. The distribution is `cui-py`; the import name is `cui`.
 
-CUI 1.4.0 is vendored in `thirdparty/cui` and compiled into the extension, so there are no runtime dependencies. Linux needs the X11 development headers to build (`libx11-dev`).
+CUI 1.5.0 is vendored in `thirdparty/cui` and compiled into the extension, so there are no runtime dependencies. Linux needs the X11 development headers to build (`libx11-dev`).
 
 Status: alpha. Tested on macOS (Cocoa, arm64, CPython 3.14). The CI workflows build macos, Linux and Windows.
 
@@ -26,7 +26,7 @@ cui.App("Hello", 420, 300).run(frame)
 
 ## Install
 
-The simplest is to juat do:
+cui-py needs CPython 3.11 or later. One `abi3` wheel per platform covers every later version.
 
 ```bash
 pip install cui-py
@@ -52,6 +52,16 @@ make test
   changed, value = ui.checkbox("Remember me", value)
   changed, index = ui.select("fruit", ["apple", "pear"], index)
   ```
+
+- **Option pointers.** An option C reads and writes takes a `cui.Ref`. Read `.value` after the frame, since some components write it at the end of a scope:
+
+  ```python
+  sel = cui.Ref(-1)
+  ui.treemap("t", items, selected=sel)
+  if sel.value >= 0: ...
+  ```
+
+  An option array takes a list. cui-py sets its count from the list, or checks the list against the length CUI reads, such as one icon per segment.
 
 - **Text fields.** A text field edits a `cui.TextBuffer(capacity, value)` in place. Capacity counts bytes, including the trailing NUL, as in C.
 
@@ -89,7 +99,9 @@ make test
 
   - Dates: `datetime.date`, or `None` for unset.
 
-- **Drawing.** `ui.canvas(id, width, height, paint)` calls `paint(rect)` after layout. Only there do the `draw_*` methods work.
+- **Images.** `image_create` and `image_update` take any C-contiguous buffer of RGBA bytes: `bytes`, `memoryview`, or a NumPy `(h, w, 4)` uint8 array.
+
+- **Drawing.** `ui.canvas(id, width, height, paint)` calls `paint(rect)` after layout. Only there do the `draw_*` methods work. `focusable=True` makes it a Tab stop. With `component_input=True` it also receives keys and text through `ctx.dispatch_input(event, route)`, replaying events an input hook (`ctx.set_input_hook`) captured.
 
 `cui.Context()` with no window renders headless with CUI's software renderer. Its parts:
 
@@ -142,19 +154,23 @@ Misuse that would be undefined behaviour in C raises an exception:
 
 - passing strings with NUL characters
 
-- passing arrays of unequal length
+- passing arrays of unequal length, or of a length CUI would read past
+
+- building UI or injecting input inside an input hook or route
+
+- updating a region outside an image, or a texture that is not one
 
 - passing color channels outside 0..255
 
 - writing more text than a buffer holds
 
-Strings and arrays passed to CUI stay alive until the frame is painted.
+Strings, arrays and `Ref`s passed to CUI stay alive until the frame is painted.
 
 The vendored CUI carries one patch, for state shared by two component types with one id. A narrower case remains; see [docs/dev/known-issues.md](docs/dev/known-issues.md).
 
 ## Coverage
 
-The generator wraps 372 entries: 355 Context methods, including 48 scopes, and 17 module functions. Another 35 functions are wrapped by hand. [docs/dev/coverage.md](docs/dev/coverage.md) lists the 27 functions not wrapped yet and why, and the options that have no keyword argument.
+The generator wraps 421 entries: 403 Context methods, including 53 scopes, and 18 module functions. Another 48 functions are wrapped by hand. [docs/dev/coverage.md](docs/dev/coverage.md) lists the 34 functions not wrapped yet and why, and the 12 options that have no keyword argument.
 
 ## Development
 

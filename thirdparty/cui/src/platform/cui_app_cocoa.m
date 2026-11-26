@@ -13,12 +13,17 @@
 
 @class CUIView;
 
-@interface CUIPlat : NSObject <NSWindowDelegate>
+@interface CUIPlat : NSObject <NSWindowDelegate, NSApplicationDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) CUIView *view;
 @property (nonatomic, strong) NSOpenGLContext *gl;
 @property (nonatomic, assign) cui_app *app;
 @property (nonatomic, assign) cui_cursor cursor;
+/* AppKit keeps the size and place a zoomed window returns to to itself: noted while normal */
+@property (nonatomic, assign) NSRect normal;      /* content rectangle, screen coordinates */
+@property (nonatomic, assign) BOOL holdNormal;    /* zooming: the frames on the way are not normal */
+@property (nonatomic, assign) BOOL wasZoomed;     /* the state before a miniaturize */
+- (void)noteNormal;
 @end
 
 static void *cui__mac_libgl;
@@ -85,6 +90,7 @@ static cui_key cui__mac_key(NSEvent *e) {
 @interface CUIView : NSView <NSTextInputClient>
 @property (nonatomic, assign) cui_app *app;
 @property (nonatomic, strong) NSTrackingArea *tracking;
+@property (nonatomic, assign) NSRect caret;   /* the focused text field's caret in view points, for the input method */
 @end
 
 @implementation CUIView
@@ -192,16 +198,51 @@ static cui_key cui__mac_key(NSEvent *e) {
 - (NSArray<NSAttributedStringKey> *)validAttributesForMarkedText { return @[]; }
 - (NSRect)firstRectForCharacterRange:(NSRange)r actualRange:(NSRangePointer)a {
     (void)r; (void)a;
-    NSRect local = NSMakeRect(0, 0, 1, 1);
+    NSRect local = NSIsEmptyRect(self.caret) ? NSMakeRect(0, 0, 1, 1) : self.caret;
     return [self.window convertRectToScreen:[self convertRect:local toView:nil]];
 }
 - (NSUInteger)characterIndexForPoint:(NSPoint)p { (void)p; return NSNotFound; }
 @end
 
+/* An empty application-defined event, posted to end a wait in nextEventMatchingMask:
+ * that has no event of its own to return (a quit from the Dock or by Apple event). */
+static void cui__mac_wake(void) {
+    NSEvent *wake = [NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0
+                                      timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0];
+    [NSApp postEvent:wake atStart:NO];
+}
+
 @implementation CUIPlat
 - (BOOL)windowShouldClose:(NSWindow *)w { (void)w; self.app->running = false; return NO; }
+/* Quit from the menu, Cmd-Q, the Dock or AppleScript ends cui_app_run (or makes cui_app_frame
+ * return false) the way closing the window does, so the code after it runs. AppKit's default
+ * would call exit() from inside the event loop. SDL2 and GLFW answer the same way. */
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+    (void)sender;
+    self.app->running = false;
+    cui__mac_wake();
+    return NSTerminateCancel;
+}
+- (void)noteNormal {
+    if (self.holdNormal) {
+        if (self.window.isZoomed) self.holdNormal = NO;
+        return;
+    }
+    if (!self.window.isZoomed && !self.window.isMiniaturized) self.normal = [self.window contentRectForFrameRect:self.window.frame];
+}
+- (BOOL)windowShouldZoom:(NSWindow *)w toFrame:(NSRect)frame {
+    (void)frame;
+    if (!w.isZoomed) {
+        self.normal = [w contentRectForFrameRect:w.frame];
+        self.holdNormal = YES;
+    }
+    return YES;
+}
+- (void)windowDidMove:(NSNotification *)n { (void)n; [self noteNormal]; }
+- (void)windowWillMiniaturize:(NSNotification *)n { (void)n; self.wasZoomed = self.window.isZoomed; }
 - (void)windowDidResize:(NSNotification *)n {
     (void)n;
+    [self noteNormal];
     if (self.gl) [self.gl update];
     cui_request_redraw(self.app->ui);
     if (self.window.inLiveResize) cui__app_live_frame(self.app);
@@ -212,6 +253,18 @@ static cui_key cui__mac_key(NSEvent *e) {
 @end
 
 static CUIPlat *cui__p(cui_app *app) { return (__bridge CUIPlat *)app->plat; }
+
+/* CUI calls this every frame a text field has focus, with the caret in window
+ * points, top-left origin, the same space as the flipped view. The input method
+ * reads it back through firstRectForCharacterRange and is told when it moves. */
+static void cui__mac_text_input_rect(void *user, cui_rect caret) {
+    cui_app *app = user;
+    CUIView *v = cui__p(app).view;
+    NSRect r = NSMakeRect(caret.x, caret.y, caret.w < 1 ? 1 : caret.w, caret.h < 1 ? 1 : caret.h);
+    if (NSEqualRects(r, v.caret)) return;
+    v.caret = r;
+    [v.inputContext invalidateCharacterCoordinates];
+}
 
 static void cui__mac_set_cursor(void *user, cui_cursor c) {
     cui_app *app = user;
@@ -266,6 +319,9 @@ static void cui__mac_menu(void) {
     [NSApp setWindowsMenu:winMenu];
 }
 
+/* Placements count y down from the top of the main screen, AppKit up from its bottom. */
+static CGFloat cui__mac_main_top(void) { return NSScreen.screens.count ? NSScreen.screens[0].frame.size.height : 0; }
+
 bool cui__plat_init(cui_app *app) {
     @autoreleasepool {
         [NSApplication sharedApplication];
@@ -284,12 +340,23 @@ bool cui__plat_init(cui_app *app) {
         w.contentMinSize = NSMakeSize(app->desc.min_width, app->desc.min_height);
         w.acceptsMouseMovedEvents = YES;
         w.delegate = p;
+        if (!NSApp.delegate) NSApp.delegate = p;   /* an app that set its own delegate keeps it */
         cui_color bg = app->ui->theme.colors[CUI_TOKEN_BACKGROUND];
         w.backgroundColor = [NSColor colorWithSRGBRed:bg.r / 255.0 green:bg.g / 255.0 blue:bg.b / 255.0 alpha:1];
         if (@available(macOS 10.14, *)) {
             w.appearance = [NSAppearance appearanceNamed:app->desc.theme == CUI_THEME_DARK ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
         }
-        [w center];
+        const cui_window_placement *pl = app->desc.placement;
+        BOOL placed = NO;
+        if (pl && pl->has_position) {
+            NSRect content = NSMakeRect(pl->x, cui__mac_main_top() - pl->y - app->desc.height, app->desc.width, app->desc.height);
+            NSRect outer = [w frameRectForContentRect:content];
+            NSRect caption = NSMakeRect(outer.origin.x, NSMaxY(content), outer.size.width, NSMaxY(outer) - NSMaxY(content));
+            for (NSScreen *screen in NSScreen.screens)
+                if (NSIntersectsRect(screen.visibleFrame, caption)) placed = YES;
+            if (placed) [w setFrame:outer display:NO];
+        }
+        if (!placed) [w center];
         CUIView *v = [[CUIView alloc] initWithFrame:frame];
         v.app = app;
         v.wantsBestResolutionOpenGLSurface = YES;
@@ -298,6 +365,7 @@ bool cui__plat_init(cui_app *app) {
         [w makeFirstResponder:v];
         p.window = w;
         p.view = v;
+        p.normal = [w contentRectForFrameRect:w.frame];
         app->plat = (__bridge_retained void *)p;
         cui_platform_iface pi;
         memset(&pi, 0, sizeof pi);
@@ -305,6 +373,7 @@ bool cui__plat_init(cui_app *app) {
         pi.set_clipboard = cui__mac_set_clip;
         pi.get_clipboard = cui__mac_get_clip;
         pi.set_cursor = cui__mac_set_cursor;
+        pi.set_text_input_rect = cui__mac_text_input_rect;
         cui_set_platform(app->ui, &pi);
     }
     return true;
@@ -314,6 +383,8 @@ void cui__plat_show(cui_app *app) {
     CUIPlat *p = cui__p(app);
     [p.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
+    const cui_window_placement *pl = app->desc.placement;
+    if (pl && pl->state == CUI_WINDOW_MAXIMIZED && !p.window.isZoomed) [p.window zoom:nil];
 }
 
 void cui__plat_shutdown(cui_app *app) {
@@ -322,6 +393,7 @@ void cui__plat_shutdown(cui_app *app) {
     app->plat = NULL;
     if (p.gl) { [NSOpenGLContext clearCurrentContext]; p.gl = nil; }
     p.window.delegate = nil;
+    if (NSApp.delegate == p) NSApp.delegate = nil;
     [p.window close];
     p.window = nil;
     p.view = nil;
@@ -418,6 +490,38 @@ void cui__plat_wait(cui_app *app, double timeout) {
     }
 }
 
+void cui__plat_minimize(cui_app *app) { [cui__p(app).window miniaturize:nil]; }
+
+void cui__plat_restore(cui_app *app) {
+    NSWindow *w = cui__p(app).window;
+    if (w.isMiniaturized) [w deminiaturize:nil];
+    else if (w.isZoomed) [w zoom:nil];
+}
+
+cui_window_state cui__plat_window_state(cui_app *app) {
+    NSWindow *w = cui__p(app).window;
+    return w.isMiniaturized ? CUI_WINDOW_MINIMIZED : w.isZoomed ? CUI_WINDOW_MAXIMIZED : CUI_WINDOW_NORMAL;
+}
+
+void cui__plat_set_position(cui_app *app, int x, int y) {
+    NSWindow *w = cui__p(app).window;
+    NSRect content = [w contentRectForFrameRect:w.frame];
+    content.origin = NSMakePoint(x, cui__mac_main_top() - y - content.size.height);
+    [w setFrameOrigin:[w frameRectForContentRect:content].origin];
+}
+
+void cui__plat_placement(cui_app *app, cui_window_placement *out) {
+    CUIPlat *p = cui__p(app);
+    NSRect r = p.normal;
+    bool maximized = p.window.isZoomed || (p.window.isMiniaturized && p.wasZoomed);
+    out->state = maximized ? CUI_WINDOW_MAXIMIZED : CUI_WINDOW_NORMAL;
+    out->x = (int)lround(r.origin.x);
+    out->y = (int)lround(cui__mac_main_top() - NSMaxY(r));
+    out->width = (int)lround(r.size.width);
+    out->height = (int)lround(r.size.height);
+    out->has_position = true;
+}
+
 #pragma clang diagnostic pop
 
 bool cui__plat_present_part(cui_app *app, const void *bgra, int w, int h, int stride, int x, int y, int pw, int ph) {
@@ -433,3 +537,10 @@ double cui__plat_refresh_hz(cui_app *app) {
 }
 
 void cui__plat_gl_release(cui_app *app) { (void)app; }   /* not used: these keep OpenGL */
+
+void cui__plat_maximize(cui_app *app) {
+    CUIPlat *p = cui__p(app);
+    if (!p || !p.window) return;
+    if (!p.window.isZoomed)
+        [p.window zoom:nil];
+}

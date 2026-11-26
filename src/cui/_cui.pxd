@@ -200,6 +200,33 @@ cdef extern from "cui/cui.h" nogil:
         CUI_CURSOR_MOVE
         CUI_CURSOR_NOT_ALLOWED
         CUI_CURSOR_COUNT
+    ctypedef enum cui_input_event_kind:
+        CUI_INPUT_MOUSE_MOVE
+        CUI_INPUT_MOUSE_BUTTON
+        CUI_INPUT_MOUSE_LEAVE
+        CUI_INPUT_SCROLL
+        CUI_INPUT_KEY
+        CUI_INPUT_TEXT
+        CUI_INPUT_FOCUS
+        CUI_INPUT_TOUCH
+        CUI_INPUT_TOUCH_MOVE
+    ctypedef struct cui_input_event:
+        cui_input_event_kind kind
+        cui_vec2 position
+        cui_vec2 delta
+        cui_mouse_button button
+        cui_key key
+        int mods
+        int finger
+        cbool down
+        cbool focused
+        const char * text
+    ctypedef cbool (*cui_input_hook_fn)(cui_ctx *, const cui_input_event *, void *)
+    void cui_set_input_hook(cui_ctx * ui, cui_input_hook_fn hook, void * user)
+    ctypedef cbool (*cui_input_route_fn)(cui_ctx *, void *, const cui_input_event *)
+    void cui_dispatch_input(cui_ctx * ui, const cui_input_event * event, cui_input_route_fn route, void * user)
+    cbool cui_input_repeated(cui_ctx * ui)
+    cbool cui_key_action_down(cui_ctx * ui, cui_key key)
     void cui_input_mouse_move(cui_ctx * ui, float x, float y)
     void cui_input_mouse_button(cui_ctx * ui, cui_mouse_button button, cbool down)
     void cui_input_mouse_leave(cui_ctx * ui)
@@ -207,6 +234,14 @@ cdef extern from "cui/cui.h" nogil:
     void cui_input_key(cui_ctx * ui, cui_key key, cbool down, int mods)
     void cui_input_text(cui_ctx * ui, const char * utf8)
     void cui_input_focus(cui_ctx * ui, cbool window_focused)
+    void cui_input_touch(cui_ctx * ui, int finger, cbool down, float x, float y)
+    void cui_input_touch_move(cui_ctx * ui, int finger, float x, float y)
+    void cui_input_touch_cancel(cui_ctx * ui, int finger)
+    int cui_touch_count(cui_ctx * ui)
+    cbool cui_touch_down(cui_ctx * ui, int finger)
+    cbool cui_touch_pressed(cui_ctx * ui, int finger)
+    cbool cui_touch_released(cui_ctx * ui, int finger)
+    cui_vec2 cui_touch_pos(cui_ctx * ui, int finger)
     void cui_input_file_hover(cui_ctx * ui, cbool hovering, float x, float y)
     void cui_input_file_drop(cui_ctx * ui, const char * const * paths, int count, float x, float y)
     int cui_dropped_file_count(cui_ctx * ui)
@@ -220,7 +255,10 @@ cdef extern from "cui/cui.h" nogil:
         void (*set_text_input_rect)(void *, cui_rect)
         cbool (*draw_emoji)(void *, const char *, int, int, unsigned char *)
     void cui_set_platform(cui_ctx * ui, const cui_platform_iface * platform)
+    void cui_set_cursor(cui_ctx * ui, cui_cursor cursor)
     cui_cursor cui_get_cursor(cui_ctx * ui)
+    void cui_set_clipboard_text(cui_ctx * ui, const char * text)
+    const char * cui_get_clipboard_text(cui_ctx * ui)
     cbool cui_key_pressed(cui_ctx * ui, cui_key key)
     cbool cui_key_down(cui_ctx * ui, cui_key key)
     cbool cui_shortcut(cui_ctx * ui, int mods, cui_key key)
@@ -405,6 +443,7 @@ cdef extern from "cui/cui.h" nogil:
     void cui_scroll_begin(cui_ctx * ui, const cui_scroll_opts * opts)
     void cui_scroll_end(cui_ctx * ui)
     void cui_scroll_to(cui_ctx * ui, const char * scroll_id, float y)
+    void cui_scroll_reveal(cui_ctx * ui, const char * scroll_id, cui_id row)
     ctypedef struct cui_split_opts:
         int _
         cbool vertical
@@ -426,6 +465,8 @@ cdef extern from "cui/cui.h" nogil:
     cbool cui_is_disabled(cui_ctx * ui)
     void cui_push_disabled(cui_ctx * ui, cbool disabled)
     void cui_pop_disabled(cui_ctx * ui)
+    void cui_push_focus_scope(cui_ctx * ui, cui_id id, cbool active)
+    void cui_pop_focus_scope(cui_ctx * ui)
     ctypedef enum cui_text_align:
         CUI_TEXT_START
         CUI_TEXT_CENTER
@@ -649,6 +690,8 @@ cdef extern from "cui/cui.h" nogil:
         cbool danger
         cbool disabled
         cbool checked
+        cui_font font
+        float text_size
     cbool cui_menu_item_ex(cui_ctx * ui, const char * label, const cui_menu_item_opts * opts)
     void cui_menu_separator(cui_ctx * ui)
     void cui_menu_label(cui_ctx * ui, const char * text)
@@ -659,6 +702,8 @@ cdef extern from "cui/cui.h" nogil:
         float width
         cbool no_close_button
         cbool persistent
+        cbool draggable
+        cbool resizable
     cbool cui_dialog_begin(cui_ctx * ui, const char * title, cbool * open, const cui_dialog_opts * opts)
     void cui_dialog_end(cui_ctx * ui)
     void cui_dialog_footer_begin(cui_ctx * ui)
@@ -710,9 +755,39 @@ cdef extern from "cui/cui.h" nogil:
         const char * label
         cbool show_value
         cui_size width
+        cbool dither
     void cui_progress_ex(cui_ctx * ui, float value, const cui_progress_opts * opts)
+    ctypedef enum cui_spinner_style:
+        CUI_SPINNER_ARC
+        CUI_SPINNER_COMET
+        CUI_SPINNER_DOT_MATRIX
+        CUI_SPINNER_FILL_DRAIN
+        CUI_SPINNER_RADAR
+        CUI_SPINNER_RIPPLE
+        CUI_SPINNER_UPLOAD
+        CUI_SPINNER_DOWNLOAD
+        CUI_SPINNER_TRANSFER
+        CUI_SPINNER_ORBIT
+        CUI_SPINNER_BOUNCE
+        CUI_SPINNER_SCAN
+        CUI_SPINNER_PULSE
+        CUI_SPINNER_SPIRAL
+        CUI_SPINNER_PLASMA
+    ctypedef struct cui_spinner_opts:
+        int _
+        cui_spinner_style style
+        cui_color color
+        cui_color track
+    void cui_spinner_ex(cui_ctx * ui, float size, const cui_spinner_opts * opts)
     void cui_spinner(cui_ctx * ui, float size)
     void cui_skeleton(cui_ctx * ui, cui_size width, float height)
+    ctypedef struct cui_skeleton_group_opts:
+        int _
+        cbool dither
+        cui_size width
+        float gap
+    void cui_skeleton_group_begin_ex(cui_ctx * ui, const cui_skeleton_group_opts * opts)
+    void cui_skeleton_group_end(cui_ctx * ui)
     ctypedef struct cui_badge_opts:
         int _
         cui_tone tone
@@ -802,6 +877,7 @@ cdef extern from "cui/cui.h" nogil:
         const char * label
         const char * detail
         cbool accent
+        cui_color color
     ctypedef struct cui_chart_opts:
         int _
         cui_size width
@@ -818,12 +894,33 @@ cdef extern from "cui/cui.h" nogil:
         float max
         const cui_chart_annotation * annotations
         int annotation_count
+        cbool dither
+        double x_min
+        double x_max
     void cui_line_chart_ex(cui_ctx * ui, const char * id, const cui_series * series, int count, const cui_chart_opts * opts)
     void cui_bar_chart_ex(cui_ctx * ui, const char * id, const cui_series * series, int count, const cui_chart_opts * opts)
     void cui_donut_chart_ex(cui_ctx * ui, const char * id, const float * values, const char * const * labels, int count, const cui_chart_opts * opts)
     void cui_sparkline(cui_ctx * ui, const float * values, int count, cui_size width, float height, cui_color color)
     void cui_gauge(cui_ctx * ui, const char * label, float value, float size)
+    ctypedef struct cui_meter_part:
+        const char * name
+        float value
+        cui_color color
+        float density
+    ctypedef struct cui_pattern_meter_opts:
+        int _
+        float total
+        const char * label
+        const char * unit
+        const char * format
+        const char * free_label
+        cbool grayscale
+        cbool no_legend
+        float height
+        cui_size width
+    int cui_pattern_meter_ex(cui_ctx * ui, const char * id, const cui_meter_part * parts, int count, const cui_pattern_meter_opts * opts)
     cui_texture cui_image_create(cui_ctx * ui, int w, int h, const void * rgba)
+    void cui_image_update(cui_ctx * ui, cui_texture tex, int x, int y, int w, int h, const void * rgba, int stride)
     cui_texture cui_image_load(cui_ctx * ui, const char * path, int * w, int * h)
     void cui_image_destroy(cui_ctx * ui, cui_texture tex)
     ctypedef struct cui_image_opts:
@@ -936,6 +1033,12 @@ cdef extern from "cui/cui.h" nogil:
         cui_button_variant variant
         cui_control_size size
     cbool cui_status_button_ex(cui_ctx * ui, const char * label, cui_status status, const cui_status_button_opts * opts)
+    ctypedef struct cui_status_spinner_opts:
+        int _
+        float size
+        cui_color color
+        cbool keep
+    cbool cui_status_spinner_ex(cui_ctx * ui, const char * id, cui_status status, const cui_status_spinner_opts * opts)
     ctypedef struct cui_reaction:
         const char * icon
         int count
@@ -1005,6 +1108,10 @@ cdef extern from "cui/cui.h" nogil:
         CUI_TREE_OPEN
         CUI_TREE_SELECTED
         CUI_TREE_LOADING
+    enum:
+        CUI_TREE_DROP_BEFORE
+        CUI_TREE_DROP_INSIDE
+        CUI_TREE_DROP_AFTER
     ctypedef struct cui_tree_node:
         int parent
         int first_child
@@ -1021,6 +1128,8 @@ cdef extern from "cui/cui.h" nogil:
         cbool guides
         const char * (*label)(void *, int)
         void * user
+        cbool draggable
+        cbool (*can_drop)(void *, int, int)
     ctypedef struct cui_tree_table_events:
         int activated
         int expanded
@@ -1029,11 +1138,18 @@ cdef extern from "cui/cui.h" nogil:
         int load_count
         cbool selection_changed
         cbool sort_changed
+        const int * dropped
+        int drop_count
+        int drop_target
+        int drop_where
     void cui_tree_table_begin_ex(cui_ctx * ui, const char * id, const cui_grid_column * columns, int column_count, cui_tree_node * nodes, int node_count, const cui_tree_table_opts * opts)
     int cui_tree_table_row(cui_ctx * ui)
     void cui_tree_table_name(cui_ctx * ui, const char * label, const char * icon)
     int cui_tree_table_depth(cui_ctx * ui)
     cui_tree_table_events cui_tree_table_end(cui_ctx * ui)
+    cbool cui_tree_table_menu_begin(cui_ctx * ui, const char * id, int * node)
+    void cui_tree_table_menu_end(cui_ctx * ui)
+    int cui_tree_move(cui_tree_node * nodes, int node_count, int root, const int * move, int move_count, int target, int where)
     ctypedef struct cui_path_bar_opts:
         int _
         const char * icon
@@ -1325,6 +1441,7 @@ cdef extern from "cui/cui.h" nogil:
         cui_size width
         float height
         const char * format
+        int * selected
     int cui_treemap_ex(cui_ctx * ui, const char * id, const cui_viz_item * items, int count, const cui_treemap_opts * opts)
     ctypedef struct cui_radar_opts:
         int _
@@ -1350,6 +1467,7 @@ cdef extern from "cui/cui.h" nogil:
         float height
         const char * format
         float node_width
+        const cui_color * node_colors
     int cui_sankey_ex(cui_ctx * ui, const char * id, const char * const * nodes, int node_count, const cui_sankey_link * links, int link_count, const cui_sankey_opts * opts)
     ctypedef struct cui_waffle_opts:
         int _
@@ -1400,6 +1518,12 @@ cdef extern from "cui/cui.h" nogil:
     ctypedef struct cui_gauge_band:
         float to
         cui_tone tone
+        const char * name
+    ctypedef enum cui_gauge_style:
+        CUI_GAUGE_AUTO
+        CUI_GAUGE_ARC
+        CUI_GAUGE_SEGMENTS
+        CUI_GAUGE_RING
     ctypedef struct cui_radial_gauge_opts:
         int _
         const char * label
@@ -1413,6 +1537,9 @@ cdef extern from "cui/cui.h" nogil:
         float target
         cbool show_target
         cbool no_needle
+        cui_gauge_style style
+        const char * detail
+        cui_color color
     void cui_radial_gauge_ex(cui_ctx * ui, const char * id, float value, float min, float max, const cui_radial_gauge_opts * opts)
     ctypedef struct cui_candle:
         float open
@@ -1534,6 +1661,7 @@ cdef extern from "cui/cui.h" nogil:
         CUI_PLAYER_PREV
         CUI_PLAYER_NEXT
         CUI_PLAYER_SEEK
+        CUI_PLAYER_SPEED
     int cui_now_playing_ex(cui_ctx * ui, const char * id, cui_now_playing * np, const cui_now_playing_opts * opts)
     ctypedef struct cui_reasoning_opts:
         int _
@@ -1620,6 +1748,9 @@ cdef extern from "cui/cui.h" nogil:
         CUI_COMPOSER_ATTACH
         CUI_COMPOSER_REMOVE
         CUI_COMPOSER_MODEL
+        CUI_COMPOSER_RECORD
+        CUI_COMPOSER_CANCEL
+        CUI_COMPOSER_VOICE
     ctypedef struct cui_composer_opts:
         int _
         const char * placeholder
@@ -1632,17 +1763,66 @@ cdef extern from "cui/cui.h" nogil:
         int * model
         int max_lines
         cui_size width
+        cbool mic
+        cbool recording
+        const float * levels
+        int level_count
+        float record_seconds
     int cui_chat_composer_ex(cui_ctx * ui, const char * id, char * buf, size_t cap, const cui_composer_opts * opts)
     ctypedef enum cui_voice_state:
         CUI_VOICE_IDLE
         CUI_VOICE_LISTENING
         CUI_VOICE_THINKING
         CUI_VOICE_SPEAKING
+        CUI_VOICE_MUTED
     ctypedef struct cui_voice_orb_opts:
         int _
         float size
         cui_color color
     cbool cui_voice_orb_ex(cui_ctx * ui, const char * id, cui_voice_state state, float level, const cui_voice_orb_opts * opts)
+    ctypedef enum cui_voice_owner:
+        CUI_VOICE_YOU
+        CUI_VOICE_REPLY
+    ctypedef struct cui_voice_wave_opts:
+        int _
+        cbool clip
+        float * progress
+        const uint8_t * owners
+        cui_voice_owner owner
+        cui_color color
+        float pitch
+        float step
+        cui_size width
+    cbool cui_voice_wave_ex(cui_ctx * ui, const char * id, const float * levels, int count, const cui_voice_wave_opts * opts)
+    int cui_voice_resample(const float * levels, int count, float * out, int columns)
+    ctypedef struct cui_voice_note:
+        const float * levels
+        int count
+        float position
+        float duration
+        float speed
+        cbool playing
+    ctypedef struct cui_voice_note_opts:
+        int _
+        cbool mine
+        cui_size width
+    int cui_voice_note_ex(cui_ctx * ui, const char * id, cui_voice_note * note, const cui_voice_note_opts * opts)
+    enum:
+        CUI_VOICE_SESSION_MUTE
+        CUI_VOICE_SESSION_END
+    ctypedef struct cui_voice_session_opts:
+        int _
+        const uint8_t * owners
+        const char * label
+        const char * transcript
+        const char * upcoming
+        cui_voice_owner speaker
+        const char * you
+        const char * assistant
+        cbool * muted
+        cbool no_end
+        cui_size width
+    int cui_voice_session_ex(cui_ctx * ui, const char * id, cui_voice_state state, const float * levels, int count, const cui_voice_session_opts * opts)
     ctypedef struct cui_kanban_move:
         int card
         int from_column
@@ -1696,6 +1876,11 @@ cdef extern from "cui/cui.h" nogil:
         cbool day_activated
         cbool month_changed
     cui_month_result cui_month_calendar_ex(cui_ctx * ui, const char * id, cui_date * month, const cui_month_event * events, int count, const cui_month_opts * opts)
+    ctypedef enum cui_gantt_state:
+        CUI_GANTT_AUTO
+        CUI_GANTT_DONE
+        CUI_GANTT_ACTIVE
+        CUI_GANTT_PLANNED
     ctypedef struct cui_gantt_task:
         const char * name
         const char * owner
@@ -1705,6 +1890,7 @@ cdef extern from "cui/cui.h" nogil:
         cui_tone tone
         int depends_on
         cbool milestone
+        cui_gantt_state state
     ctypedef struct cui_gantt_opts:
         int _
         float day_width
@@ -1772,6 +1958,16 @@ cdef extern from "cui/cui.h" nogil:
         const char * title
         const char * description
     int cui_checklist_ex(cui_ctx * ui, const char * id, cui_check_step * steps, int count, const cui_checklist_opts * opts)
+    ctypedef struct cui_veil_opts:
+        int _
+        const char * label
+        const char * hint
+        cbool toggle
+        float radius
+        cui_color color
+        cui_size width
+    cbool cui_veil_begin_ex(cui_ctx * ui, const char * id, cbool * revealed, const cui_veil_opts * opts)
+    void cui_veil_end(cui_ctx * ui)
     ctypedef struct cui_multi_select_opts:
         int _
         const char * label
@@ -1964,9 +2160,14 @@ cdef extern from "cui/cui.h" nogil:
         cbool disabled
     cbool cui_menu_bar_menu_begin(cui_ctx * ui, const char * label, const cui_menu_bar_menu_opts * opts)
     void cui_menu_bar_menu_end(cui_ctx * ui)
+    ctypedef enum cui_toolbar_style:
+        CUI_TOOLBAR_PLAIN
+        CUI_TOOLBAR_GROUPED
+        CUI_TOOLBAR_FLOATING
     ctypedef struct cui_toolbar_opts:
         int _
         cbool no_border
+        cui_toolbar_style style
     void cui_toolbar_begin(cui_ctx * ui, const char * id, const cui_toolbar_opts * opts)
     void cui_toolbar_end(cui_ctx * ui)
     ctypedef struct cui_tool_opts:
@@ -1976,9 +2177,20 @@ cdef extern from "cui/cui.h" nogil:
         const char * shortcut
         cbool * toggle
         cbool disabled
+        cui_tone tone
+        cbool flyout
     cbool cui_toolbar_button_ex(cui_ctx * ui, const char * icon, const cui_tool_opts * opts)
     void cui_toolbar_separator(cui_ctx * ui)
     void cui_toolbar_spacer(cui_ctx * ui)
+    void cui_toolbar_group_begin(cui_ctx * ui)
+    void cui_toolbar_group_end(cui_ctx * ui)
+    ctypedef struct cui_toolbar_radio_opts:
+        int _
+        const char * const * labels
+    cbool cui_toolbar_radio_ex(cui_ctx * ui, const char * id, const char * const * icons, int count, int * index, const cui_toolbar_radio_opts * opts)
+    cbool cui_toolbar_primary_ex(cui_ctx * ui, const char * icon, const cui_tool_opts * opts)
+    cbool cui_toolbar_cycle_ex(cui_ctx * ui, const char * id, const char * const * items, int count, int * index, const cui_tool_opts * opts)
+    void cui_flyout_mark(cui_ctx * ui)
     ctypedef struct cui_status_bar_opts:
         int _
         cbool no_border
@@ -2255,6 +2467,103 @@ cdef extern from "cui/cui.h" nogil:
         int selected
     cui_gradient_result cui_gradient_editor_ex(cui_ctx * ui, const char * id, cui_gradient_stop * stops, int * count, int capacity, const cui_gradient_opts * opts)
     cui_color cui_gradient_eval(const cui_gradient_stop * stops, int count, float t)
+    ctypedef enum cui_tag_status:
+        CUI_TAG_PENDING
+        CUI_TAG_IN_PROGRESS
+        CUI_TAG_SUBMITTED
+        CUI_TAG_IN_REVIEW
+        CUI_TAG_SUCCESS
+        CUI_TAG_FAILED
+        CUI_TAG_EXPIRED
+        CUI_TAG_CUSTOM
+    ctypedef struct cui_status_tag_opts:
+        int _
+        cui_control_size size
+        cbool removable
+        const char * icon
+        cui_tone tone
+        const char * id
+    cbool cui_status_tag_ex(cui_ctx * ui, const char * label, cui_tag_status status, const cui_status_tag_opts * opts)
+    ctypedef struct cui_ratio_slider_opts:
+        int _
+        cui_tone tone
+        float step
+        float height
+        cui_size width
+        cbool disabled
+    cbool cui_ratio_slider_ex(cui_ctx * ui, const char * first, const char * second, float * ratio, const cui_ratio_slider_opts * opts)
+    enum:
+        CUI_WELL_CHANGED
+        CUI_WELL_ACTION
+    ctypedef enum cui_gradient_track:
+        CUI_GRADIENT_HUE
+        CUI_GRADIENT_TEMPERATURE
+        CUI_GRADIENT_OPACITY
+    ctypedef struct cui_gradient_slider_opts:
+        int _
+        cui_gradient_track track
+        const cui_gradient_stop * stops
+        int stop_count
+        cui_color color
+        cui_color * color_out
+        float step
+        const char * format
+        const char * value
+        cbool swatch
+        const char * tool
+        const char * tool_tooltip
+        cbool tool_on
+        cbool plain
+        cbool disabled
+    int cui_gradient_slider_ex(cui_ctx * ui, const char * label, float * value, float min, float max, const cui_gradient_slider_opts * opts)
+    ctypedef struct cui_step_slider_opts:
+        int _
+        const char * const * labels
+        const char * format
+        const char * value
+        const char * tool
+        const char * tool_tooltip
+        cbool tool_on
+        cbool plain
+        cbool disabled
+    int cui_step_slider_ex(cui_ctx * ui, const char * label, int * value, int min, int max, const cui_step_slider_opts * opts)
+    ctypedef struct cui_palette_strip_opts:
+        int _
+        uint32_t * seed
+        const char * value
+        cbool no_shuffle
+        float height
+        cbool plain
+    int cui_palette_strip_ex(cui_ctx * ui, const char * label, cui_color * colors, cbool * locked, int count, const cui_palette_strip_opts * opts)
+    ctypedef struct cui_aspect:
+        int w
+        int h
+        const char * label
+    ctypedef struct cui_aspect_picker_opts:
+        int _
+        const cui_aspect * ratios
+        int count
+        cbool custom
+        const char * custom_label
+        int base
+        const char * value
+        cbool plain
+    cbool cui_aspect_picker_ex(cui_ctx * ui, const char * label, int * index, const cui_aspect_picker_opts * opts)
+    ctypedef struct cui_option_action_opts:
+        int _
+        const char * tooltip
+        cbool action_on
+        cbool action_disabled
+        const char * value
+        cbool plain
+    int cui_option_action_ex(cui_ctx * ui, const char * label, const char * const * items, int count, int * index, const char * icon, const cui_option_action_opts * opts)
+    ctypedef struct cui_seed_field_opts:
+        int _
+        const char * value
+        const char * random_text
+        const char * fixed_text
+        cbool plain
+    int cui_seed_field_ex(cui_ctx * ui, const char * label, uint32_t * seed, cbool * locked, const cui_seed_field_opts * opts)
     ctypedef enum cui_timeline_ruler:
         CUI_TIMELINE_FRAMES
         CUI_TIMELINE_SECONDS
@@ -2501,6 +2810,12 @@ cdef extern from "cui/cui.h" nogil:
         const char * name
         double time
         cui_tone tone
+    ctypedef struct cui_trace_link:
+        int from_ "from"
+        int to
+        cui_tone tone
+        float width
+        cbool dashed
     ctypedef struct cui_trace_view:
         double start
         double end
@@ -2514,12 +2829,16 @@ cdef extern from "cui/cui.h" nogil:
         float row_height
         const cui_trace_marker * markers
         int marker_count
+        const cui_trace_link * links
+        int link_count
     ctypedef struct cui_trace_result:
         cbool selection_changed
         cbool view_changed
         int hovered
+        int hovered_link
     cui_trace_result cui_trace_view_ex(cui_ctx * ui, const char * id, cui_trace_track * tracks, int track_count, const cui_trace_span * spans, int span_count, cui_trace_view * view, int * selected, const cui_trace_opts * opts)
     void cui_trace_sort(cui_trace_span * spans, int count)
+    cui_rect cui_trace_span_rect(cui_ctx * ui, cui_id trace, const cui_trace_span * span)
     enum:
         CUI_REGEX_ICASE
         CUI_REGEX_MULTILINE
@@ -2700,6 +3019,7 @@ cdef extern from "cui/cui.h" nogil:
     ctypedef enum cui_axis_units:
         CUI_AXIS_NUMBER
         CUI_AXIS_HOURS
+    ctypedef void (*cui_axis_label_fn)(void *, double, char *, size_t)
     ctypedef struct cui_dot_series:
         const float * values
         const char * name
@@ -2723,6 +3043,10 @@ cdef extern from "cui/cui.h" nogil:
         cbool no_readout
         const cui_chart_annotation * annotations
         int annotation_count
+        cui_axis_label_fn x_label
+        void * x_label_user
+        cui_axis_label_fn value_label
+        void * value_label_user
     ctypedef struct cui_dot_chart_result:
         int hovered
         double x
@@ -2740,6 +3064,8 @@ cdef extern from "cui/cui.h" nogil:
         cbool no_add
         cbool no_remove
         cbool no_axis
+        cui_axis_label_fn label
+        void * label_user
     ctypedef struct cui_event_track_result:
         cbool changed
         int added
@@ -2767,6 +3093,115 @@ cdef extern from "cui/cui.h" nogil:
         cui_text_align align
         cui_size width
     void cui_dot_display_ex(cui_ctx * ui, const char * text, const cui_dot_display_opts * opts)
+    ctypedef enum cui_format_align:
+        CUI_FORMAT_ALIGN_LEFT
+        CUI_FORMAT_ALIGN_CENTER
+        CUI_FORMAT_ALIGN_RIGHT
+        CUI_FORMAT_ALIGN_JUSTIFY
+    ctypedef enum cui_format_list:
+        CUI_FORMAT_LIST_NONE
+        CUI_FORMAT_LIST_BULLETS
+        CUI_FORMAT_LIST_NUMBERS
+        CUI_FORMAT_LIST_CHECKS
+    ctypedef struct cui_text_format:
+        cui_tone color
+        cbool bold
+        cbool underline
+        cbool link
+        int style
+        float size
+        cui_format_align align
+        cui_format_list list
+    ctypedef struct cui_text_style:
+        const char * name
+        float size
+        float preview_size
+        cui_font font
+    ctypedef struct cui_format_bar_opts:
+        int _
+        const cui_text_style * styles
+        int style_count
+        const cui_tone * colors
+        int color_count
+        const char * footer
+        const char * footer_keys
+        const char * delete_question
+        cbool no_delete
+        cbool no_more
+    enum:
+        CUI_FORMAT_CHANGED
+        CUI_FORMAT_LINK
+        CUI_FORMAT_DELETE
+        CUI_FORMAT_MORE
+    int cui_format_bar_ex(cui_ctx * ui, const char * id, cui_text_format * format, const cui_format_bar_opts * opts)
+    ctypedef struct cui_live_user:
+        const char * name
+        cui_color color
+        cui_tone tone
+        float x
+        float y
+        const char * says
+        cbool speaking
+        cbool away
+        cui_texture avatar
+    ctypedef struct cui_live_cursors_opts:
+        int _
+        const cui_node_view * view
+        cbool no_glide
+    void cui_live_cursors_ex(cui_ctx * ui, const char * id, const cui_live_user * users, int count, const cui_live_cursors_opts * opts)
+    ctypedef struct cui_presence_pill_opts:
+        int _
+        float size
+        int max_visible
+    void cui_presence_pill_ex(cui_ctx * ui, const char * id, const cui_live_user * users, int count, const cui_presence_pill_opts * opts)
+    ctypedef struct cui_selection_ring_opts:
+        int _
+        const char * name
+        float radius
+    void cui_selection_ring_ex(cui_ctx * ui, cui_color color, const cui_selection_ring_opts * opts)
+    ctypedef struct cui_canvas_toggle:
+        const char * icon
+        const char * label
+        cbool * on
+    ctypedef struct cui_canvas_controls_opts:
+        int _
+        const float * steps
+        int step_count
+        cui_rect content
+        const cui_canvas_toggle * toggles
+        int toggle_count
+        cbool no_fit
+        cbool start_side
+    enum:
+        CUI_CANVAS_ZOOMED
+        CUI_CANVAS_FIT
+        CUI_CANVAS_TOGGLED
+    int cui_canvas_controls_ex(cui_ctx * ui, const char * id, cui_node_view * view, const cui_canvas_controls_opts * opts)
+    ctypedef struct cui_result_card_opts:
+        int _
+        const char * caption
+        const char * badge
+        cui_tone badge_tone
+        int image_w
+        int image_h
+        cui_size width
+        float aspect
+    cbool cui_result_card_ex(cui_ctx * ui, const char * id, cui_texture image, const char * title, const cui_result_card_opts * opts)
+    ctypedef struct cui_selection_action:
+        const char * icon
+        const char * label
+        cui_tone tone
+    ctypedef struct cui_selection_bar_opts:
+        int _
+        cbool * selected
+        int item_count
+        const char * count_format
+        cui_id anchor
+        cbool no_escape
+    enum:
+        CUI_SELECTION_NONE
+        CUI_SELECTION_CLEARED
+    int cui_selection_bar_ex(cui_ctx * ui, const char * id, int count, const cui_selection_action * actions, int action_count, const cui_selection_bar_opts * opts)
     ctypedef struct cui_corners:
         float tl
         float tr
@@ -2794,6 +3229,19 @@ cdef extern from "cui/cui.h" nogil:
         cbool clicked
         cui_vec2 mouse
     cui_canvas_result cui_canvas(cui_ctx * ui, const char * id, cui_size width, cui_size height, cui_paint_fn paint, const void * user, size_t user_size)
+    ctypedef struct cui_canvas_opts:
+        cbool focusable
+        cbool component_input
+    cui_canvas_result cui_canvas_ex(cui_ctx * ui, const char * id, cui_size width, cui_size height, cui_paint_fn paint, const void * user, size_t user_size, const cui_canvas_opts * opts)
+    void cui_request_component_focus(cui_ctx * ui, cui_id id)
+    cbool cui_component_has_input(cui_ctx * ui, cui_id id)
+    cui_id cui_focused_id(cui_ctx * ui)
+    cbool cui_window_focused(cui_ctx * ui)
+    cbool cui_focus_visible(cui_ctx * ui, cui_id id)
+    void * cui_frame_alloc(cui_ctx * ui, size_t size)
+    char * cui_frame_strdup(cui_ctx * ui, const char * s)
+    void cui_wheel_region(cui_ctx * ui, cui_id id, cui_rect rect)
+    cbool cui_wheel_take(cui_ctx * ui, cui_id id, cui_vec2 * delta)
     void * cui_state(cui_ctx * ui, cui_id id, size_t size)
     float cui_animate(cui_ctx * ui, cui_id id, float target)
     float cui_animate_spring(cui_ctx * ui, cui_id id, float target, float duration, float bounce)
@@ -2803,6 +3251,7 @@ cdef extern from "cui/cui.h" nogil:
         CUI_SHADE_SHADOW
         CUI_SHADE_IMAGE
         CUI_SHADE_SOLID
+        CUI_SHADE_DITHER
     ctypedef struct cui_vertex:
         float x
         float y
@@ -2859,6 +3308,17 @@ cdef extern from "cui/cui_render.h" nogil:
     void cui_gl_render(cui_gl_renderer * r, const cui_draw_data * dd, cbool clear)
     void cui_gl_read_pixels(cui_gl_renderer * r, int width, int height, void * rgba)
     cbool cui_gl_is_software(const cui_gl_renderer * r)
+    ctypedef struct cui_gpu_renderer
+    ctypedef struct cui_x11_window:
+        void * display
+        unsigned long window
+        int width
+        int height
+    cui_gpu_renderer * cui_gpu_create(void * window, cbool vsync)
+    void cui_gpu_destroy(cui_gpu_renderer * r)
+    cui_renderer_iface cui_gpu_iface(cui_gpu_renderer * r)
+    void cui_gpu_render(cui_gpu_renderer * r, const cui_draw_data * dd)
+    cbool cui_gpu_render_capture(cui_gpu_renderer * r, const cui_draw_data * dd, void * rgba)
 
 cdef extern from "cui/cui_app.h" nogil:
     ctypedef struct cui_app
@@ -2866,6 +3326,18 @@ cdef extern from "cui/cui_app.h" nogil:
         CUI_RENDERER_AUTO
         CUI_RENDERER_OPENGL
         CUI_RENDERER_SOFTWARE
+        CUI_RENDERER_GPU
+    ctypedef enum cui_window_state:
+        CUI_WINDOW_NORMAL
+        CUI_WINDOW_MAXIMIZED
+        CUI_WINDOW_MINIMIZED
+    ctypedef struct cui_window_placement:
+        int x
+        int y
+        int width
+        int height
+        cui_window_state state
+        cbool has_position
     ctypedef struct cui_app_desc:
         const char * title
         int width
@@ -2881,6 +3353,7 @@ cdef extern from "cui/cui_app.h" nogil:
         cui_accent accent
         cbool follow_system_theme
         const char * app_id
+        const cui_window_placement * placement
     cui_app * cui_app_create(const cui_app_desc * desc)
     void cui_app_destroy(cui_app * app)
     cbool cui_app_frame(cui_app * app)
@@ -2889,6 +3362,13 @@ cdef extern from "cui/cui_app.h" nogil:
     void cui_app_set_title(cui_app * app, const char * title)
     void cui_app_set_size(cui_app * app, int width, int height)
     cui_vec2 cui_app_size(cui_app * app)
+    void cui_app_maximize(cui_app * app)
+    void cui_app_minimize(cui_app * app)
+    void cui_app_restore(cui_app * app)
+    cui_window_state cui_app_window_state(cui_app * app)
+    void cui_app_set_position(cui_app * app, int x, int y)
+    cbool cui_app_placement(cui_app * app, cui_window_placement * out)
+    void cui_app_follow_system_theme(cui_app * app, cbool follow)
     cbool cui_app_is_software(cui_app * app)
     void * cui_app_native_window(cui_app * app)
     const char * cui_app_backend(cui_app * app)

@@ -46,3 +46,28 @@ def test_paint_error_from_app_frame() -> None:
         app.ui.canvas("c", 10, 10, paint)
         with pytest.raises(LookupError):
             app.frame()
+
+
+def test_window_state_and_placement() -> None:
+    with cui.App("test", 480, 320, hidden=True) as app:
+        assert app.frame()
+        assert app.window_state() in (
+            cui.WINDOW_NORMAL,
+            cui.WINDOW_MAXIMIZED,
+            cui.WINDOW_MINIMIZED,
+        )
+        p = app.placement()
+        assert isinstance(p, cui.WindowPlacement)
+        assert (p.width, p.height) == (480, 320)
+        app.set_position(40, 50)
+        app.follow_system_theme(True)
+        app.follow_system_theme(False)
+        app.maximize()
+        app.restore()
+        app.minimize()
+        app.restore()
+        assert app.frame()
+    with cui.App("test", 100, 100, hidden=True, placement=p) as app:
+        assert app.placement()[2:4] == (480, 320)  # the placement's size wins
+    with pytest.raises(RuntimeError, match="closed"):
+        app.placement()

@@ -66,7 +66,7 @@ typedef struct cui__ne_build {
     cui_rect r;                           /* editor rect, last frame */
     float ox, oy;                         /* screen position of canvas (0, 0) */
     int editor_node;
-    bool grid, minimap, consumed, has_rect, bg_focus;
+    bool grid, minimap, consumed, has_rect, bg_focus, disabled;
     int inert, inert_content;             /* nested or misplaced begin calls */
     /* node being built */
     bool in_node;
@@ -75,7 +75,7 @@ typedef struct cui__ne_build {
     float nx, ny, nw, row_y, card_sx, card_sy;
     bool node_selected;
     struct cui__ne_card *card_paint;
-    int content_node; float c_sx, c_sy; float saved_mx, saved_my, saved_pmx, saved_pmy; bool in_content;
+    int content_node; float c_sx, c_sy; cui_vec2 saved_pointer; float saved_pmx, saved_pmy; bool in_content;
     cui_id content_id;
     int *cards; int card_n, card_cap;     /* card node indices (frame memory) */
     bool *raise;
@@ -203,12 +203,13 @@ static void cui__ne_draw_wire(cui_ctx *ui, cui_vec2 a, cui_vec2 d, float z, floa
 
 static float cui__ne_wire_thickness(float z) { return cui__clampf(1.75f * z, 1.1f, 3.0f); }
 
+/** Paint the canvas and expose its wheel hit target while interactive. */
 static void cui__paint_ne_canvas(cui_ctx *ui, cui_node *n, void *data) {
     cui__ne_build *b = data;
     cui__ne_state *st = b->st;
     cui_rect r = n->rect;
     /* the wheel goes to the editor while the pointer is over its visible part */
-    {
+    if (!b->disabled) {
         cui_rect clip = ui->dl.clip_stack[ui->dl.clip_depth - 1];
         float s = ui->scale;
         cui_rect cp = { clip.x / s, clip.y / s, clip.w / s, clip.h / s };
@@ -679,10 +680,11 @@ static void cui__ne_build_canvas(cui_ctx *ui, cui__ne_build *b, const cui_node_e
     cui__mark_interactive(ui, en, CUI_IF_FOCUSABLE);
     b->bg_focus = focus_visible;
     b->editor_node = en;
-    if (hot_mine && b->st->mode == NE_IDLE && ui->kdown[CUI_KEY_SPACE]) cui__set_cursor(ui, CUI_CURSOR_MOVE);
+    if (hot_mine && b->st->mode == NE_IDLE && cui_key_action_down(ui, CUI_KEY_SPACE)) cui__set_cursor(ui, CUI_CURSOR_MOVE);
     cui__open(ui, en);
 }
 
+/** Build the editor canvas and process gestures while it is enabled. */
 bool cui_node_editor_begin_ex(cui_ctx *ui, const char *id_str, cui_node_view *view, const cui_node_editor_opts *o) {
     cui_node_editor_opts d;
     memset(&d, 0, sizeof d);
@@ -694,6 +696,7 @@ bool cui_node_editor_begin_ex(cui_ctx *ui, const char *id_str, cui_node_view *vi
     b->id = cui_make_id(ui, id_str ? id_str : "node-editor");
     b->frame = ui->frame;
     b->view = view;
+    b->disabled = cui_is_disabled(ui);
     b->min_zoom = o->min_zoom > 0 ? o->min_zoom : 0.25f;
     b->max_zoom = o->max_zoom > b->min_zoom ? o->max_zoom : CUI_MAX(2.0f, b->min_zoom);
     b->grid = !o->no_grid;
@@ -731,20 +734,25 @@ bool cui_node_editor_begin_ex(cui_ctx *ui, const char *id_str, cui_node_view *vi
     float mx = ui->mx, my = ui->my;
 
     /* input */
-    cui__ne_wheel(ui, b);
-    if (focus_mine && !ui->edit_prev) cui__ne_keys(ui, b, prev);
+    if (b->disabled) {
+        st->mode = NE_IDLE;
+        st->has_target = false;
+    } else {
+        cui__ne_wheel(ui, b);
+        if (focus_mine && !ui->edit_prev) cui__ne_keys(ui, b, prev);
+    }
     if (st->frame_all && b->has_rect) {
         st->frame_all = false;
         cui__ne_frame_all(b, prev);
     }
     /* pan: the middle button, or Space and drag, anywhere over the canvas */
     bool over = b->has_rect && cui__rect_contains(b->r, mx, my) && ui->hot_layer == ui->current_layer && (hot_mine || ui->hot != 0);
-    if (over && st->mode == NE_IDLE && !ui->edit_prev &&
-        (ui->mpressed[CUI_MOUSE_MIDDLE] || (ui->mpressed[0] && ui->kdown[CUI_KEY_SPACE]))) {
+    if (!b->disabled && over && st->mode == NE_IDLE && !ui->edit_prev &&
+        (ui->mpressed[CUI_MOUSE_MIDDLE] || (ui->mpressed[0] && cui_key_action_down(ui, CUI_KEY_SPACE)))) {
         st->mode = NE_PAN; st->last_x = mx; st->last_y = my;
         b->consumed = true;
     }
-    cui__ne_gesture(ui, b, prev, mmid);
+    if (!b->disabled) cui__ne_gesture(ui, b, prev, mmid);
     if (mi.hovered && ui->mpressed[0] && !b->consumed && st->mode == NE_IDLE) {
         st->mode = NE_MINIMAP;
         b->consumed = true;
@@ -754,7 +762,7 @@ bool cui_node_editor_begin_ex(cui_ctx *ui, const char *id_str, cui_node_view *vi
     cui__spring(ui, &st->lift, st->mode == NE_DRAG ? 1.0f : 0.0f, CUI_SPRING_SNAPPY);
 
     /* build */
-    cui__ne_build_canvas(ui, b, o, bi.focus_visible, hot_mine);
+    cui__ne_build_canvas(ui, b, o, bi.focus_visible, hot_mine && !b->disabled);
     cui_push_id(ui, id_str ? id_str : "node-editor");
     b->prev = reg->cur;
     reg->cur = b;
@@ -937,6 +945,7 @@ void cui_node_end(cui_ctx *ui) {
     nd->id = b->node_id; nd->x = b->nx; nd->y = b->ny; nd->w = b->nw; nd->h = h;
     cui__close(ui);
     b->in_node = false;
+    ui->last_node = b->card_node;   /* the card is the previous component, for a selection ring */
     ui->last_id = b->card_id;
 }
 
@@ -1030,7 +1039,9 @@ void cui_node_content_begin(cui_ctx *ui) {
     b->content_id = id;
     b->c_sx = b->card_sx + fx; b->c_sy = b->card_sy + fy;
     /* components inside see the pointer in their own (unscaled) space */
-    b->saved_mx = ui->mx; b->saved_my = ui->my; b->saved_pmx = ui->pmx; b->saved_pmy = ui->pmy;
+    b->saved_pointer = cui_mouse_pos(ui);
+    if (!ui->building.screen_pointer) ui->building.screen_pointer = &b->saved_pointer;
+    b->saved_pmx = ui->pmx; b->saved_pmy = ui->pmy;
     ui->mx = b->c_sx + (ui->mx - b->c_sx) / z; ui->my = b->c_sy + (ui->my - b->c_sy) / z;
     ui->pmx = b->c_sx + (ui->pmx - b->c_sx) / z; ui->pmy = b->c_sy + (ui->pmy - b->c_sy) / z;
     b->in_content = true;
@@ -1043,7 +1054,8 @@ void cui_node_content_end(cui_ctx *ui) {
     if (!b || b->inert_content > 0 || !b->in_content) { if (b && b->inert_content > 0) b->inert_content--; cui__close(ui); return; }
     cui_pop_id(ui);
     cui__close(ui);
-    ui->mx = b->saved_mx; ui->my = b->saved_my; ui->pmx = b->saved_pmx; ui->pmy = b->saved_pmy;
+    if (ui->building.screen_pointer == &b->saved_pointer) ui->building.screen_pointer = NULL;
+    ui->mx = b->saved_pointer.x; ui->my = b->saved_pointer.y; ui->pmx = b->saved_pmx; ui->pmy = b->saved_pmy;
     b->in_content = false;
     cui__ne_state *st = b->st;
     float ph = cui__has_prev_rect(ui, b->content_id) ? cui__prev_rect(ui, b->content_id).h : 30;

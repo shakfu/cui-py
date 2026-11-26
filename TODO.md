@@ -12,7 +12,7 @@
 
 ## After 0.1.0
 
-- [ ] File `docs/dev/upstream-cui-state-issue.md` upstream. Drop `thirdparty/patches/cui-state-reset.patch` once CUI fixes it.
+- [ ] File `docs/dev/issues/cui-state-reset.md` upstream. Drop `thirdparty/patches/cui-state-reset.patch` once CUI fixes it.
 
 - [ ] abi3 wheels (Cython 3.1+ Limited API), as in microui-py. Measure the per-call cost first.
 

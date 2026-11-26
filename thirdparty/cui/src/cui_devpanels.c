@@ -16,16 +16,6 @@ static cui_color cui__dp_method_color(cui_ctx *ui, const char *m) {
     }
 }
 
-/* scrolls a scroll area so a row that was laid out last frame is in view */
-static void cui__dp_reveal(cui_ctx *ui, cui_id scroll_id, cui_id row_id) {
-    if (!cui__has_prev_rect(ui, row_id) || !cui__has_prev_rect(ui, scroll_id)) return;
-    cui_rect r = cui__prev_rect(ui, row_id), c = cui__prev_rect(ui, scroll_id);
-    cui_scroll_state *ss = cui_state(ui, scroll_id, sizeof *ss);
-    if (r.y < c.y) ss->ty -= c.y - r.y;
-    else if (r.y + r.h > c.y + c.h) ss->ty += r.y + r.h - (c.y + c.h);
-    if (ss->ty < 0) ss->ty = 0;
-}
-
 /* ======================================================================== */
 /* Regex tester                                                             */
 /* ======================================================================== */
@@ -1009,7 +999,7 @@ cui_api_explorer_result cui_api_explorer_ex(cui_ctx *ui, const char *id_str, con
             cui_badge_ex(ui, "Deprecated", &bo);
         }
         cui__close(ui);
-        if (is_sel && s->scroll_to_sel) { if (scrolls) cui__dp_reveal(ui, scroll_id, rid); s->scroll_to_sel = false; }
+        if (is_sel && s->scroll_to_sel) { if (scrolls) cui__scroll_reveal(ui, scroll_id, rid); s->scroll_to_sel = false; }
         if (open) { cui_push_id_int(ui, i); cui__ax_params(ui, ep, i, narrow, &res); cui_pop_id(ui); }
     }
     if (no == 0) {

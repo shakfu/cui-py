@@ -55,9 +55,9 @@ extern "C" {
 #endif
 
 #define CUI_VERSION_MAJOR 1
-#define CUI_VERSION_MINOR 4
+#define CUI_VERSION_MINOR 5
 #define CUI_VERSION_PATCH 0
-#define CUI_VERSION_STRING "1.4.0"
+#define CUI_VERSION_STRING "1.5.0"
 
 #ifndef CUI_API
 #  if defined(_WIN32) && defined(CUI_SHARED) && defined(CUI_BUILDING)
@@ -197,7 +197,8 @@ CUI_API void cui_set_viewport(cui_ctx *ui, float width, float height, float scal
 CUI_API cui_vec2 cui_viewport_size(cui_ctx *ui);
 CUI_API float cui_dpi_scale(cui_ctx *ui);
 
-/* dt is the time since the previous frame in seconds. */
+/* dt is the elapsed time since the previous frame in seconds.
+ * Timers use the full interval (up to an hour). Animation steps are capped after idle. */
 CUI_API void cui_begin_frame(cui_ctx *ui, float dt);
 CUI_API void cui_end_frame(cui_ctx *ui);
 
@@ -257,6 +258,57 @@ typedef enum cui_cursor {
     CUI_CURSOR_RESIZE_NS, CUI_CURSOR_MOVE, CUI_CURSOR_NOT_ALLOWED, CUI_CURSOR_COUNT
 } cui_cursor;
 
+/* Optional application-owned input capture, before legacy aggregation.
+ * Runs synchronously on the UI thread. Event and text storage are borrowed
+ * only during the callback. true consumes the event; false preserves the
+ * existing widget behavior. No UI construction or input injection is allowed
+ * inside the callback. Copy retained text. Unregister before freeing user.
+ * To replay captured input, unregister, call the existing cui_input_* entry
+ * points, then register again. Legacy replay retains existing text-size limits.
+ * The caller owns queue limits and error policy.
+ * Key events preserve each call, including repeated down and modifier-only
+ * CUI_KEY_NONE events. Touch events (cui_input_touch and cui_input_touch_move)
+ * also pass through this interface as CUI_INPUT_TOUCH and CUI_INPUT_TOUCH_MOVE.
+ * File drops are not intercepted by this interface. */
+typedef enum cui_input_event_kind {
+    CUI_INPUT_MOUSE_MOVE, CUI_INPUT_MOUSE_BUTTON, CUI_INPUT_MOUSE_LEAVE,
+    CUI_INPUT_SCROLL, CUI_INPUT_KEY, CUI_INPUT_TEXT, CUI_INPUT_FOCUS,
+    CUI_INPUT_TOUCH, CUI_INPUT_TOUCH_MOVE
+} cui_input_event_kind;
+typedef struct cui_input_event {
+    cui_input_event_kind kind;
+    cui_vec2 position;          /* mouse move and touch only */
+    cui_vec2 delta;             /* scroll only, same units as cui_input_scroll */
+    cui_mouse_button button;   /* mouse button only */
+    cui_key key;               /* key only */
+    int mods;                  /* key only; track modifier-only events too */
+    int finger;                /* touch only */
+    bool down;                 /* key/button/touch only */
+    bool focused;              /* window focus only */
+    const char *text;          /* text only; NUL terminated, borrowed */
+} cui_input_event;
+typedef bool (*cui_input_hook_fn)(cui_ctx *ui, const cui_input_event *event, void *user);
+/* NULL unregisters. Install before input delivery; do not change inside hook. */
+CUI_API void cui_set_input_hook(cui_ctx *ui, cui_input_hook_fn hook, void *user);
+
+/* Dispatch one captured KEY, TEXT or FOCUS event after begin_frame and before
+ * component submission. Unregister capture while dispatching. Physical key and
+ * modifier state updates before route; true stops actions, not bookkeeping.
+ * False permits CUI defaults, including Tab traversal after refusal. A handled
+ * down cannot drive default held actions until release. Inactive input updates
+ * physical state only; FOCUS still calls route for lifecycle notification.
+ * Route and text are borrowed synchronously. Do not construct UI, recurse,
+ * inject input, or change the hook inside route. The host owns command types,
+ * key maps, fallback scopes, queueing and any required reconciliation passes.
+ * A handled key does not suppress separately delivered committed text.
+ * Existing input entry points keep their legacy behavior for opt-out callers. */
+typedef bool (*cui_input_route_fn)(cui_ctx *ui, void *user, const cui_input_event *event);
+CUI_API void cui_dispatch_input(cui_ctx *ui, const cui_input_event *event, cui_input_route_fn route, void *user);
+/* Valid inside route: whether this key-down repeats a physical held key. */
+CUI_API bool cui_input_repeated(cui_ctx *ui);
+/* Held state eligible for default actions. cui_key_down remains physical state. */
+CUI_API bool cui_key_action_down(cui_ctx *ui, cui_key key);
+
 CUI_API void cui_input_mouse_move(cui_ctx *ui, float x, float y);
 CUI_API void cui_input_mouse_button(cui_ctx *ui, cui_mouse_button button, bool down);
 CUI_API void cui_input_mouse_leave(cui_ctx *ui);
@@ -264,6 +316,23 @@ CUI_API void cui_input_scroll(cui_ctx *ui, float dx, float dy);  /* in lines; +d
 CUI_API void cui_input_key(cui_ctx *ui, cui_key key, bool down, int mods);
 CUI_API void cui_input_text(cui_ctx *ui, const char *utf8);
 CUI_API void cui_input_focus(cui_ctx *ui, bool window_focused);
+
+/* Raw multi-touch, for apps and touch-first components. Fingers are numbered
+ * by the platform (0 is usually the first finger to land). The mouse API
+ * keeps working beside this: a backend may feed both. */
+#define CUI_TOUCH_MAX 10
+CUI_API void cui_input_touch(cui_ctx *ui, int finger, bool down, float x, float y);
+CUI_API void cui_input_touch_move(cui_ctx *ui, int finger, float x, float y);
+CUI_API void cui_input_touch_cancel(cui_ctx *ui, int finger);   /* a system gesture stole the finger */
+/* Touches this frame: count, per-finger state and position; finger -1 reads
+ * the first active touch (the one that landed earliest), and on the frame the
+ * last finger lifts, that finger. A finger that lifted this frame keeps its
+ * last position in cui_touch_pos for that frame, so a tap can be placed. */
+CUI_API int cui_touch_count(cui_ctx *ui);
+CUI_API bool cui_touch_down(cui_ctx *ui, int finger);
+CUI_API bool cui_touch_pressed(cui_ctx *ui, int finger);   /* landed this frame */
+CUI_API bool cui_touch_released(cui_ctx *ui, int finger);  /* lifted this frame */
+CUI_API cui_vec2 cui_touch_pos(cui_ctx *ui, int finger);
 /* Files dragged from the OS: hover while a drag is over the window (where the
  * platform reports it), then the drop itself. Paths are UTF-8 and copied. */
 CUI_API void cui_input_file_hover(cui_ctx *ui, bool hovering, float x, float y);
@@ -285,7 +354,17 @@ typedef struct cui_platform_iface {
     bool (*draw_emoji)(void *user, const char *utf8, int len, int px, unsigned char *rgba);
 } cui_platform_iface;
 CUI_API void cui_set_platform(cui_ctx *ui, const cui_platform_iface *platform);
+/* Request a cursor during component submission or painting. The last request
+ * wins. At end of frame the platform hook receives it; the next frame starts
+ * with CUI_CURSOR_ARROW. */
+CUI_API void cui_set_cursor(cui_ctx *ui, cui_cursor cursor);
 CUI_API cui_cursor cui_get_cursor(cui_ctx *ui);
+/* The system clipboard, for a menu or status bar item that copies or pastes ("Copy path").
+ * They go through the platform's clipboard hooks, as the copy button and text fields do:
+ * without a hook, setting does nothing and getting returns "". The returned text stays
+ * valid until the next call. */
+CUI_API void cui_set_clipboard_text(cui_ctx *ui, const char *text);
+CUI_API const char *cui_get_clipboard_text(cui_ctx *ui);
 
 /* Queries, useful for app level shortcuts. */
 CUI_API bool cui_key_pressed(cui_ctx *ui, cui_key key);          /* pressed this frame (with repeat) */
@@ -480,6 +559,11 @@ typedef struct cui_scroll_opts {
 CUI_API void cui_scroll_begin(cui_ctx *ui, const cui_scroll_opts *opts);
 CUI_API void cui_scroll_end(cui_ctx *ui);
 CUI_API void cui_scroll_to(cui_ctx *ui, const char *scroll_id, float y);
+/* Scrolls the area the least that shows `row` (any id from cui_box_begin, cui_last_id or
+ * cui_make_id), comparing both rectangles from the latest layout: nothing when the row is
+ * wholly in view or either rectangle is not known yet, else just enough to show its clipped
+ * edge; a row taller than the view gets its top at the top. For keyboard selection in a list. */
+CUI_API void cui_scroll_reveal(cui_ctx *ui, const char *scroll_id, cui_id row);
 
 /* Resizable split view: two panes with a draggable divider. `ratio` is the
  * size of the first pane in 0..1. Call cui_split_next between the panes. */
@@ -505,6 +589,12 @@ CUI_API bool cui_last_hovered(cui_ctx *ui);
 CUI_API bool cui_is_disabled(cui_ctx *ui);
 CUI_API void cui_push_disabled(cui_ctx *ui, bool disabled);
 CUI_API void cui_pop_disabled(cui_ctx *ui);
+/* Restrict Tab / Shift+Tab navigation to widgets built inside the active scope
+ * (for example, the focused pane in a multi-pane workspace). An inactive scope
+ * and its descendants remain clickable but outside the Tab order. With no active
+ * scope, Tab visits unscoped controls. An open modal takes precedence. */
+CUI_API void cui_push_focus_scope(cui_ctx *ui, cui_id id, bool active);
+CUI_API void cui_pop_focus_scope(cui_ctx *ui);
 
 /* ------------------------------------------------------------------------ */
 /* Text                                                                     */
@@ -597,6 +687,8 @@ typedef struct cui_slider_opts {
 } cui_slider_opts;
 /* Elastic slider: the track stretches like rubber when dragged past its ends. */
 CUI_API bool cui_slider_ex(cui_ctx *ui, const char *label, float *value, float min, float max, const cui_slider_opts *opts);
+/* Range slider with two non-crossing thumbs. Tab focuses the range, Space
+ * selects the other thumb, and the slider keys adjust the focused thumb. */
 CUI_API bool cui_range_slider(cui_ctx *ui, const char *label, float *lo, float *hi, float min, float max);
 CUI_API bool cui_rating(cui_ctx *ui, const char *id, int *value, int max);
 
@@ -616,7 +708,7 @@ typedef struct cui_input_opts {
     const char *icon;          /* leading icon */
     const char *hint;          /* helper text below */
     const char *error;         /* error text below (red) */
-    bool password;             /* shows dots instead of the text, with an eye button that reveals it */
+    bool password;             /* shows dots instead of the text, with an eye button that reveals it (inactive when disabled) */
     bool disabled;
     bool clearable;            /* x button when not empty */
     bool autofocus;
@@ -630,7 +722,8 @@ typedef struct cui_input_opts {
 
 /* Single line text field. Returns CUI_CHANGED / CUI_SUBMITTED (Enter) flags. */
 CUI_API int cui_input_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_input_opts *opts);
-/* Multi-line text area with word wrap. */
+/* Multi-line text area with word wrap. The wheel scrolls the text first and
+ * goes to the enclosing scroll view at the text area's edges. */
 CUI_API int cui_textarea_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_input_opts *opts);
 /* Search field with a search icon and a clear button. */
 CUI_API int cui_search_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_input_opts *opts);
@@ -644,6 +737,8 @@ typedef struct cui_number_opts {
     cui_size width;
     const char *suffix;        /* muted text after the value, before the - and + buttons, e.g. "kg" */
 } cui_number_opts;
+/* A bounded number field. Only complete finite drafts update the value.
+ * Enter or loss of focus shows the accepted value using opts.decimals. */
 CUI_API bool cui_number_ex(cui_ctx *ui, const char *id, double *value, double min, double max, const cui_number_opts *opts);
 
 /* ------------------------------------------------------------------------ */
@@ -659,6 +754,8 @@ typedef struct cui_select_opts {
     bool disabled;
     cui_size width;
 } cui_select_opts;
+/* Enter opens the list or picks the highlighted item. A searchable select
+ * returns focus to its trigger when its list closes. */
 CUI_API bool cui_select_ex(cui_ctx *ui, const char *id, const char *const *items, int count, int *index, const cui_select_opts *opts);
 
 typedef struct cui_date { int year, month, day; } cui_date;   /* month 1..12 */
@@ -689,8 +786,12 @@ typedef struct cui_nav_opts {
 CUI_API bool cui_nav_item_ex(cui_ctx *ui, const char *label, const cui_nav_opts *opts);
 CUI_API void cui_nav_section(cui_ctx *ui, const char *title);
 
-CUI_API int cui_breadcrumb(cui_ctx *ui, const char *const *items, int count);   /* returns clicked index or -1 */
-CUI_API bool cui_pagination(cui_ctx *ui, const char *id, int *page, int page_count);  /* page is 0 based */
+/* Ancestor links, which show keyboard focus. Returns the clicked index or -1. */
+CUI_API int cui_breadcrumb(cui_ctx *ui, const char *const *items, int count);
+/* Page buttons, which show keyboard focus; page is 0 based. The compact layout is
+ * chosen from the parent's inner width. */
+CUI_API bool cui_pagination(cui_ctx *ui, const char *id, int *page, int page_count);
+/* Process steps; labels collapse to fit the width of their own row. */
 CUI_API void cui_stepper(cui_ctx *ui, const char *const *steps, int count, int current);
 
 /* ------------------------------------------------------------------------ */
@@ -765,12 +866,15 @@ typedef struct cui_menu_item_opts {
     bool danger;
     bool disabled;
     bool checked;              /* a check mark at the right edge of the item */
+    cui_font font;             /* the label's font, default CUI_FONT_BODY: a style menu shows each style in its own */
+    float text_size;           /* the label's size in points, default the body size; the item grows to fit it */
 } cui_menu_item_opts;
 CUI_API bool cui_menu_item_ex(cui_ctx *ui, const char *label, const cui_menu_item_opts *opts);
 CUI_API void cui_menu_separator(cui_ctx *ui);
 CUI_API void cui_menu_label(cui_ctx *ui, const char *text);
 
-/* Tooltip for the previous component, shown after a short hover delay. */
+/* Tooltip for the previous component. The first hover waits for the delay,
+ * measured in elapsed time even when the app sleeps between frames. */
 CUI_API void cui_tooltip(cui_ctx *ui, const char *text);
 
 /* ------------------------------------------------------------------------ */
@@ -783,8 +887,11 @@ typedef struct cui_dialog_opts {
     float width;               /* default 440 */
     bool no_close_button;      /* hides the x in the corner (Esc and a click outside still close it unless `persistent`) */
     bool persistent;           /* clicking outside or Esc does not close */
+    bool draggable;            /* the header moves the dialog; it stays inside the window */
+    bool resizable;            /* the edges and corners resize it, down to a minimum size; the content is clipped when it no longer fits */
 } cui_dialog_opts;
-/* Modal dialog. Shown while *open is true; closing sets it to false. */
+/* Modal dialog. Shown while *open is true; closing sets it to false.
+ * Escape leaves a focused text field before it can dismiss the dialog. */
 CUI_API bool cui_dialog_begin(cui_ctx *ui, const char *title, bool *open, const cui_dialog_opts *opts);
 CUI_API void cui_dialog_end(cui_ctx *ui);
 /* A right-aligned row for dialog actions. */
@@ -810,7 +917,7 @@ typedef struct cui_toast_opts {
     bool show_timer;           /* a draining line shows how long the action stays (undo) */
 } cui_toast_opts;
 /* Queue a toast. Returns a handle; cui_toast_action_clicked(handle) tells
- * whether its action button was pressed. */
+ * whether its action button was pressed before the toast started closing. */
 CUI_API int cui_toast_ex(cui_ctx *ui, const char *title, const cui_toast_opts *opts);
 CUI_API bool cui_toast_action_clicked(cui_ctx *ui, int handle);
 CUI_API void cui_toast_dismiss(cui_ctx *ui, int handle);
@@ -823,10 +930,76 @@ CUI_API bool cui_alert_ex(cui_ctx *ui, const char *title, const cui_alert_opts *
 /* Feedback and display                                                     */
 /* ------------------------------------------------------------------------ */
 
-typedef struct cui_progress_opts { int _; bool indeterminate; cui_tone tone; float height; const char *label; bool show_value; cui_size width; } cui_progress_opts;
+typedef struct cui_progress_opts {
+    int _;
+    bool indeterminate;        /* no value: a segment (or with `dither`, a soft band of dots) travels the track */
+    cui_tone tone;
+    float height;              /* points, default 6 (8 with `dither`) */
+    const char *label;         /* a row above the bar with this name */
+    bool show_value;           /* a whole percentage at the end of that row */
+    cui_size width;
+    bool dither;               /* drawn in dots: the fill dissolves over 60 points past its edge, and the
+                                * pattern drifts forward while the bar is not full; reduced motion holds it still */
+} cui_progress_opts;
 CUI_API void cui_progress_ex(cui_ctx *ui, float value, const cui_progress_opts *opts);
-CUI_API void cui_spinner(cui_ctx *ui, float size);
+/* Spinner: says that something is happening, for as long as you call it. `size` is its
+ * height in points (20 when 0). The default style is a ring with a sweeping arc
+ * that holds still with reduced motion. The other styles
+ * are drawn in dots on an 8x8 ordered dither, one point a dot below 32 points tall and two
+ * from there, and each fits a kind of wait:
+ *
+ *     cui_spinner(ui, 20);                                        the ring
+ *     cui_spinner(ui, 14, .style = CUI_SPINNER_COMET);            inline, in a button or a chip
+ *     cui_spinner(ui, 56, .style = CUI_SPINNER_RADAR);            searching a network
+ *     cui_spinner(ui, 32, .style = CUI_SPINNER_UPLOAD, .color = CUI_COLOR_ACCENT);
+ *
+ * A dither spinner asks for a frame only when its dots move (12 to 30 times a second by
+ * style) and only while it is on screen; reduced motion holds each style on a still frame. */
+typedef enum cui_spinner_style {
+    CUI_SPINNER_ARC = 0,       /* a ring with an arc sweeping round it */
+    CUI_SPINNER_COMET,         /* a ring of dots with a head and a tail that thins out dot by dot */
+    CUI_SPINNER_DOT_MATRIX,    /* a 5x5 grid of dots with a wave running through it, for dense layouts */
+    CUI_SPINNER_FILL_DRAIN,    /* a tile that fills from the bottom, then dissolves: a step of a job */
+    CUI_SPINNER_RADAR,         /* a sweep round a dial; points light up as it passes: searching, scanning */
+    CUI_SPINNER_RIPPLE,        /* rings spreading from a dot: connecting, pairing, waiting for the other side */
+    CUI_SPINNER_UPLOAD,        /* chevrons streaming up: sending */
+    CUI_SPINNER_DOWNLOAD,      /* chevrons streaming down: receiving */
+    CUI_SPINNER_TRANSFER,      /* both, side by side: syncing both ways */
+    CUI_SPINNER_ORBIT,         /* two dots circling, their trails dissolving: syncing */
+    CUI_SPINNER_BOUNCE,        /* three bouncing dots with short trails: typing, a chat reply */
+    CUI_SPINNER_SCAN,          /* a scan line reading a page: indexing, importing */
+    CUI_SPINNER_PULSE,         /* a soft disc breathing in density: recording, live */
+    CUI_SPINNER_SPIRAL,        /* three arms turning: a long, calm background wait */
+    CUI_SPINNER_PLASMA         /* slow moving noise in a tile: generating an image or audio */
+} cui_spinner_style;
+typedef struct cui_spinner_opts {
+    int _;
+    cui_spinner_style style;
+    cui_color color;           /* default the secondary text color for the ring, the text color for dots */
+    cui_color track;           /* the dots' base (a comet's ring, a dot matrix's dots), default `color` at 12% */
+} cui_spinner_opts;
+/* most styles are square; upload and download are 25/32 as wide as tall, transfer 50/32, bounce 40/28, scan 28/32 */
+CUI_API void cui_spinner_ex(cui_ctx *ui, float size, const cui_spinner_opts *opts);
+CUI_API void (cui_spinner)(cui_ctx *ui, float size);   /* the ring; the macro below calls cui_spinner_ex */
 CUI_API void cui_skeleton(cui_ctx *ui, cui_size width, float height);
+/* Skeleton group: placeholders for content that is loading, built inside it with
+ * cui_skeleton (in rows and columns as the content will be), share one shine that passes
+ * over them together. With `dither` they are drawn in dots and a band of brighter dots
+ * travels over them, asking for 20 frames a second while on screen; reduced motion holds
+ * the band still. Groups nest.
+ *
+ *     cui_skeleton_group(ui, .dither = true) {
+ *         cui_row(ui, .gap = 10) { cui_skeleton(ui, CUI_PX(20), 20); cui_skeleton(ui, CUI_PCT(55), 6); }
+ *         cui_skeleton(ui, CUI_FILL, 6);
+ *     } */
+typedef struct cui_skeleton_group_opts {
+    int _;
+    bool dither;               /* in dots, with a band of brighter dots passing over them */
+    cui_size width;            /* default: fill */
+    float gap;                 /* between what is built inside, default 8 */
+} cui_skeleton_group_opts;
+CUI_API void cui_skeleton_group_begin_ex(cui_ctx *ui, const cui_skeleton_group_opts *opts);
+CUI_API void cui_skeleton_group_end(cui_ctx *ui);
 
 typedef struct cui_badge_opts {
     int _;
@@ -902,11 +1075,11 @@ typedef struct cui_list_item_opts {
 CUI_API bool cui_list_item_ex(cui_ctx *ui, const char *title, const cui_list_item_opts *opts);
 
 /* Virtual list: only the visible rows are built, so lists with a million
- * rows stay fast. Fills first/last with the visible range. */
+ * rows stay fast. Fills first/last with the visible range for this row count. */
 CUI_API void cui_virtual_list_begin(cui_ctx *ui, const char *id, int count, float row_height, cui_size height, int *first, int *last);
 CUI_API void cui_virtual_list_end(cui_ctx *ui);
 
-/* Table */
+/* Table: sortable headers and selectable rows show keyboard focus. */
 typedef struct cui_table_column {
     const char *title;         /* text of the column's header */
     cui_size width;            /* default fill */
@@ -952,11 +1125,12 @@ typedef enum cui_annotation_kind {
 } cui_annotation_kind;
 typedef struct cui_chart_annotation {
     cui_annotation_kind kind;
-    double x;                  /* in the chart's x units: the point's index for line and bar charts, x_min to x_max for the dot chart */
+    double x;                  /* in the chart's x units: x_min to x_max, or the point's index in a line or bar chart that sets neither */
     double y;                  /* a value, in the chart's value units */
     const char *label;         /* first line, e.g. "PEAK 203 MG"; `NULL` for a line with no label */
     const char *detail;        /* second line, muted, e.g. "13:06"; `NULL` for none */
     bool accent;               /* the line, dot and label in the accent color */
+    cui_color color;           /* the line, dot and label in this color, e.g. CUI_COLOR_SUCCESS; default: `accent` decides */
 } cui_chart_annotation;
 
 typedef struct cui_chart_opts {
@@ -968,12 +1142,16 @@ typedef struct cui_chart_opts {
     bool area;                 /* fill under lines */
     bool no_grid;
     bool no_legend;
-    bool stacked;              /* bar chart */
+    bool stacked;              /* bars stack in one column; lines stack on the series before them */
     bool smooth;               /* curved lines */
     const char *format;        /* value format for axis and tooltip, default "%.0f" */
     float min, max;            /* fixed y range when min != max */
     const cui_chart_annotation *annotations;   /* lines and points drawn over the chart (line and bar charts) */
     int annotation_count;      /* number of `annotations` */
+    bool dither;               /* line chart: every series filled with dots that thin out from its line to the
+                                * bottom of its band (implies `area`); with `stacked`, bands never mix colors */
+    double x_min, x_max;       /* line and bar charts: what the first and last point stand for, in annotation x units;
+                                * equal: annotation x is the point's index */
 } cui_chart_opts;
 CUI_API void cui_line_chart_ex(cui_ctx *ui, const char *id, const cui_series *series, int count, const cui_chart_opts *opts);
 CUI_API void cui_bar_chart_ex(cui_ctx *ui, const char *id, const cui_series *series, int count, const cui_chart_opts *opts);
@@ -981,9 +1159,38 @@ CUI_API void cui_donut_chart_ex(cui_ctx *ui, const char *id, const float *values
 CUI_API void cui_sparkline(cui_ctx *ui, const float *values, int count, cui_size width, float height, cui_color color);
 CUI_API void cui_gauge(cui_ctx *ui, const char *label, float value, float size);
 
+/* Pattern meter: a stacked usage bar (storage, budgets, quotas) whose parts differ in color
+ * and in the density of their dots, so it still reads in grayscale, in print and without
+ * telling hues apart. One dot of space parts the parts, and the rest of `total` is free
+ * space in the track color. Hovering a part, or its legend entry, steps the others back and
+ * shows its name, value and share above the bar; the keyboard does the same with Left and
+ * Right. Returns the part shown, or -1. */
+typedef struct cui_meter_part {
+    const char *name;          /* in the legend and the readout */
+    float value;               /* in the meter's units */
+    cui_color color;           /* default: the series palette, in order */
+    float density;             /* share of dots lit, 0..1; 0 takes the next of 1, 0.66, 0.42, 0.24, 0.14, 0.08 */
+} cui_meter_part;
+typedef struct cui_pattern_meter_opts {
+    int _;
+    float total;               /* the whole bar; 0 means the sum of the parts (no free space) */
+    const char *label;         /* the title over the bar, e.g. "Storage" */
+    const char *unit;          /* after every value, e.g. "GB" */
+    const char *format;        /* printf format of a value, default "%g" */
+    const char *free_label;    /* the legend entry of the free space, default "Free"; "" leaves it out */
+    bool grayscale;            /* every part in the foreground color, told apart by density alone */
+    bool no_legend;
+    float height;              /* points, default 18 */
+    cui_size width;            /* default: fill */
+} cui_pattern_meter_opts;
+CUI_API int cui_pattern_meter_ex(cui_ctx *ui, const char *id, const cui_meter_part *parts, int count, const cui_pattern_meter_opts *opts);
+
 /* Images */
 CUI_API cui_texture cui_image_create(cui_ctx *ui, int w, int h, const void *rgba);
-CUI_API cui_texture cui_image_load(cui_ctx *ui, const char *path, int *w, int *h);   /* PNG/JPEG via stb_image */
+/* Update a rectangle within an existing RGBA8 texture and request a redraw. stride is
+ * the byte distance between source rows: at least w * 4, or 0 for tightly packed. */
+CUI_API void cui_image_update(cui_ctx *ui, cui_texture tex, int x, int y, int w, int h, const void *rgba, int stride);
+CUI_API cui_texture cui_image_load(cui_ctx *ui, const char *path, int *w, int *h);   /* UTF-8 path, PNG/JPEG via stb_image */
 CUI_API void cui_image_destroy(cui_ctx *ui, cui_texture tex);
 typedef struct cui_image_opts {
     int _;
@@ -1068,10 +1275,12 @@ typedef struct cui_tag_opts {
     int max_tags;              /* most tags the field holds; once reached it takes no more typing. 0 means no limit */
     cui_size width;
 } cui_tag_opts;
+/* max_tags applies to every tag, including a batch separated by commas. */
 CUI_API bool cui_tag_input_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_tag_opts *opts);
 
 /* One time code input: `length` boxes; code must hold length + 1 bytes.
- * Returns true when all boxes are filled (once per change). */
+ * Returns true when all boxes are filled, including when a paste replaces
+ * one complete code with a different complete code. */
 CUI_API bool cui_otp_input(cui_ctx *ui, const char *id, char *code, int length);
 
 /* Connected buttons. Put buttons between begin and end. */
@@ -1137,7 +1346,8 @@ CUI_API int cui_split_button_ex(cui_ctx *ui, const char *label, const char *cons
 
 /* Toggle group: a row of toggles (bold, italic...). values[i] is toggled
  * when item i is clicked; with exclusive set exactly one stays on. Labels
- * become tooltips when icon_only is set. Returns true when a value changed. */
+ * become tooltips when icon_only is set. Left and Right move focus one item.
+ * Returns true when a value changed. */
 typedef struct cui_toggle_group_opts {
     int _;
     const char *const *icons;
@@ -1173,6 +1383,23 @@ typedef struct cui_status_button_opts {
     cui_control_size size;
 } cui_status_button_opts;
 CUI_API bool cui_status_button_ex(cui_ctx *ui, const char *label, cui_status status, const cui_status_button_opts *opts);
+
+/* Status spinner: a dither ring while the status is busy that resolves when the work ends: it
+ * fills to a disc in the success color with a check, or the danger color with a cross, holds
+ * it for a moment and dissolves away. It keeps its space throughout. Returns true while it
+ * shows something, so an app can stop calling it after a result.
+ *
+ *     cui_status_spinner(ui, "save", saving ? CUI_STATUS_BUSY : ok ? CUI_STATUS_SUCCESS : CUI_STATUS_ERROR);
+ *
+ * Idle shows nothing. Reduced motion shows the ring still and the result at once. */
+typedef struct cui_status_spinner_opts {
+    int _;
+    float size;                /* points, default 20 */
+    cui_color color;           /* the ring while busy, default the text color */
+    bool keep;                 /* the check or cross stays instead of dissolving away */
+} cui_status_spinner_opts;
+CUI_API bool cui_status_spinner_ex(cui_ctx *ui, const char *id, cui_status status, const cui_status_spinner_opts *opts);
+#define cui_status_spinner(ui, id, status, ...) cui_status_spinner_ex((ui), (id), (status), CUI__OPTS(cui_status_spinner_opts, __VA_ARGS__))
 
 /* Reactions: icon pills with counts. Clicking toggles `active` and adjusts
  * the count. Returns the index that changed, or -1. */
@@ -1259,6 +1486,7 @@ typedef struct cui_grid_opts {
     bool hide_checkboxes;      /* with selected: rows still select (click, Shift, Ctrl) but no checkbox column */
     int *anchor;               /* the row Shift ranges start from, optional (in and out like cursor) */
 } cui_grid_opts;
+/* Returns a visible range for the current row count, even after the grid shrinks. */
 CUI_API bool cui_data_grid_begin_ex(cui_ctx *ui, const char *id, const cui_grid_column *columns, int column_count, int row_count,
                                     int *first, int *last, const cui_grid_opts *opts);
 CUI_API bool cui_data_grid_row(cui_ctx *ui, int row);   /* true when the row was clicked */
@@ -1308,13 +1536,36 @@ CUI_API bool cui_filter_bar(cui_ctx *ui, const char *id, const cui_filter_field 
  * child, Left closes it or moves to its parent, Home and End, Enter
  * activates, * opens every sibling, typing jumps to a name (with .label).
  * Selection is the data grid's: click, Shift for a range, Ctrl to toggle,
- * Ctrl+A, Esc. Columns hide by cui_grid_column.priority when narrow. */
+ * Ctrl+A, Esc. Columns hide by cui_grid_column.priority when narrow.
+ *
+ * With .draggable, rows drag to move nodes: the drag carries the selection
+ * (or the row you grab when it is not selected), a line or an outlined row
+ * shows where it would land, the list scrolls near its edges, a closed
+ * folder opens when you hold the drag over it, and Esc cancels. The table
+ * only reports the drop; move the nodes with cui_tree_move:
+ *
+ *     if (ev.drop_count > 0)
+ *         root = cui_tree_move(nodes, count, root, ev.dropped, ev.drop_count, ev.drop_target, ev.drop_where);
+ *
+ * A context menu for the node under the pointer: build it after
+ * cui_tree_table_end with the table's id, every frame. A right click on a
+ * row (or Shift+F10 on the cursor row) opens it at the pointer; a row
+ * outside the selection becomes the selection first, so the menu acts on
+ * the selection or, for a single node, on `node`. It closes when its node
+ * is hidden or removed. A table whose caller never builds the menu ignores
+ * the right button.
+ *
+ *     int node;
+ *     cui_tree_table_menu(ui, "files", &node) {
+ *         if (cui_menu_item(ui, "Rename")) rename_node(node);
+ *     } */
 enum {
     CUI_TREE_HAS_CHILDREN = 1 << 0,   /* shows a chevron before its children are loaded */
     CUI_TREE_OPEN         = 1 << 1,   /* expanded (the table toggles it) */
     CUI_TREE_SELECTED     = 1 << 2,   /* the table sets and clears it */
     CUI_TREE_LOADING      = 1 << 3    /* children pending: an open node shows a spinner row; clear it when loaded */
 };
+enum { CUI_TREE_DROP_BEFORE, CUI_TREE_DROP_INSIDE, CUI_TREE_DROP_AFTER };   /* where dropped nodes go, next to a target node */
 typedef struct cui_tree_node {
     int parent;                /* -1 for a top level node */
     int first_child;           /* -1 when it has none, or none loaded yet */
@@ -1330,7 +1581,9 @@ typedef struct cui_tree_table_opts {
     int *cursor;               /* the keyboard node, optional (in and out) */
     bool guides;               /* quiet vertical lines for each indentation level */
     const char *(*label)(void *user, int node);   /* names for type-ahead, optional */
-    void *user;                /* passed to `label` as its first argument */
+    void *user;                /* passed to `label` and `can_drop` as their first argument */
+    bool draggable;            /* rows drag to move nodes; the drop arrives in cui_tree_table_events */
+    bool (*can_drop)(void *user, int target, int where);   /* optional: false refuses a drop of the dragged (selected) nodes there */
 } cui_tree_table_opts;
 typedef struct cui_tree_table_events {
     int activated;             /* node chosen with Enter or a double click, else -1 */
@@ -1339,6 +1592,9 @@ typedef struct cui_tree_table_events {
     int load_count;            /* number of nodes in `load`; at most 64 a frame */
     bool selection_changed;    /* a node's `CUI_TREE_SELECTED` flag changed this frame */
     bool sort_changed;         /* re-sort every sibling list by *sort */
+    const int *dropped;        /* nodes dropped this frame (.draggable), in tree order, none inside another; valid this frame */
+    int drop_count;            /* number of nodes in `dropped`, 0 without a drop */
+    int drop_target, drop_where;   /* they go CUI_TREE_DROP_BEFORE, _INSIDE (as the last children) or _AFTER this node, else -1 */
 } cui_tree_table_events;
 CUI_API void cui_tree_table_begin_ex(cui_ctx *ui, const char *id, const cui_grid_column *columns, int column_count,
                                      cui_tree_node *nodes, int node_count, const cui_tree_table_opts *opts);
@@ -1350,9 +1606,20 @@ CUI_API int cui_tree_table_row(cui_ctx *ui);
 CUI_API void cui_tree_table_name(cui_ctx *ui, const char *label, const char *icon);
 CUI_API int cui_tree_table_depth(cui_ctx *ui);   /* depth of the current row, 0 at the top */
 CUI_API cui_tree_table_events cui_tree_table_end(cui_ctx *ui);
+/* The context menu of table `id` (after cui_tree_table_end): true while it
+ * is open, with the node it was opened for in *node; fill it with
+ * cui_menu_item and friends, then call cui_tree_table_menu_end. */
+CUI_API bool cui_tree_table_menu_begin(cui_ctx *ui, const char *id, int *node);
+CUI_API void cui_tree_table_menu_end(cui_ctx *ui);
 /* Sorts every sibling list (stable) by cmp, relinking the nodes. Returns
  * the new first top level node. */
 CUI_API int cui_tree_sort(cui_tree_node *nodes, int node_count, int root, int (*cmp)(void *user, int a, int b), void *user);
+/* Moves nodes, each with its subtree, before, into (after the last child) or
+ * after target, keeping their order, and relinks the nodes. Returns the new
+ * first top level node. A target that is one of the nodes or inside one,
+ * or a node listed twice, moves nothing. Flags stay as they are: open the target yourself if you
+ * want the moved nodes in view. */
+CUI_API int cui_tree_move(cui_tree_node *nodes, int node_count, int root, const int *move, int move_count, int target, int where);
 
 /* Path bar: a breadcrumb for file and scene paths. Segments are clickable,
  * the last one is the current place. Middle segments that do not fit
@@ -1385,9 +1652,11 @@ CUI_API void cui_path_bar_menu_end(cui_ctx *ui);
  * system's own). The browser lists a folder (name,
  * date modified and size; folders first, any column sorts), with back,
  * forward and up, a path bar you can type into, a filter field and a
- * sidebar of places. Double-click or Enter opens a folder or picks a file;
- * Backspace goes up, Alt+Left and Alt+Right go back and forward, F5
- * reloads, and typing a letter jumps to the next name that starts with it.
+ * scrollable sidebar of places and native drives/volumes; the default sidebar
+ * highlights only the most specific enclosing place or volume. Double-click or
+ * Enter opens a folder or picks a file; Backspace goes up, Alt+Left and
+ * Alt+Right go back and forward, F5 reloads the folder and native sidebar,
+ * and typing a letter jumps to the next name that starts with it.
  * A folder is read when you enter it (or reload), not every frame, and only
  * the rows in view are built.
  *
@@ -1417,8 +1686,8 @@ typedef struct cui_file_browser_opts {
     bool folders_only;         /* lists folders and leaves the files out */
     bool hidden;               /* show hidden files */
     bool no_places;            /* the sidebar of places */
-    const char *const *places; /* full paths for the sidebar, each shown by its last part; at most 6 */
-    int place_count;           /* entries in `places`; with `places` NULL the sidebar shows home, desktop, documents, downloads and the root */
+    const char *const *places; /* full paths for the scrollable sidebar, each shown by its last part */
+    int place_count;           /* entries in `places`; when places is NULL: home, desktop, documents, downloads and native drives/mounts */
     cui_file_list_fn list;     /* function that lists a folder; set it to browse something other than the local disk */
     void *list_user;           /* passed to `list` as its first argument; `list` defaults to cui_fs_list, the local disk */
     int max_entries;           /* default 20,000 */
@@ -1459,11 +1728,11 @@ CUI_API bool cui_file_picker_ex(cui_ctx *ui, const char *id, bool *open, char *o
 /* ------------------------------------------------------------------------ */
 
 /* Code block with syntax highlighting (lang: "c", "cpp", "js", "ts",
- * "python", "rust", "go", "json", "shell", or "text" for none), line numbers, a title bar and a
+ * "python", "rust", "go", "json", "shell", "sql", or "text" for none), line numbers, a title bar and a
  * copy button. Long lines scroll sideways. */
 typedef struct cui_code_opts {
     int _;
-    const char *lang;          /* "c", "cpp", "js", "ts", "python", "rust", "go", "json", "shell" or "text" (no colors); shown in the title bar */
+    const char *lang;          /* "c", "cpp", "js", "ts", "python", "rust", "go", "json", "shell", "sql" or "text" (no colors); shown in the title bar */
     const char *title;         /* e.g. a file name */
     bool line_numbers;         /* a column of line numbers on the left */
     int highlight_from, highlight_to;   /* 1 based line range to emphasize */
@@ -1556,6 +1825,8 @@ CUI_API bool cui_markdown_apply_task(char *text, const cui_markdown_result *resu
  *     if (r.changed) recompile(src);
  *     cui_textf(ui, "Ln %d, Col %d", r.line, r.column);
  *
+ * With .lang = "text", indentation is preserved without syntax colors;
+ * tabs advance to the next tab_size column stop.
  * Lines never wrap; long ones scroll sideways while the gutter stays. Only
  * the lines in view are tokenized and drawn, so files of tens of thousands
  * of lines stay fast. An edit that would not fit in the capacity is refused
@@ -1572,7 +1843,7 @@ CUI_API bool cui_markdown_apply_task(char *text, const cui_markdown_result *resu
 typedef struct cui_text_mark { int start, end; int color; } cui_text_mark;
 typedef struct cui_code_editor_opts {
     int _;
-    const char *lang;          /* as cui_code_block: "c", "cpp", "js", "ts", "python", "rust", "go", "json", "shell"; "text" for none */
+    const char *lang;          /* as cui_code_block: "c", "cpp", "js", "ts", "python", "rust", "go", "json", "shell", "sql"; "text" for none */
     cui_size width;            /* default fill */
     float height;              /* default 320; negative fills the space */
     float size;                /* font size, default 13 */
@@ -1725,7 +1996,7 @@ typedef struct cui_chat_opts {
 } cui_chat_opts;
 CUI_API void cui_chat_message_ex(cui_ctx *ui, const char *text, const cui_chat_opts *opts);
 CUI_API void cui_chat_divider(cui_ctx *ui, const char *label);       /* "Today" */
-CUI_API void cui_typing_indicator(cui_ctx *ui, const char *name);    /* bouncing dots */
+CUI_API void cui_typing_indicator(cui_ctx *ui, const char *name);    /* bouncing dots, still with reduced motion */
 
 /* Comment with replies. depth indents replies under a connector line.
  * Returns CUI_COMMENT_LIKE or CUI_COMMENT_REPLY flags for what was clicked;
@@ -1833,15 +2104,15 @@ CUI_API void cui_ticker_ex(cui_ctx *ui, const char *id, const cui_ticker_item *i
  * and returns the index of the mark that was clicked, or -1. Colors default
  * to the series palette; numbers use `format` (printf, default compact). */
 
-/* Heatmap: a rows x cols matrix (values[row * cols + col]) on one hue,
- * light to dark, with a scale below. */
+/* Heatmap: a rows x cols matrix (values[row * cols + col]) in five steps from
+ * the empty surface to the accent, with the range and a Less / More key below. */
 typedef struct cui_heatmap_opts {
     int _;
     const char *const *row_labels;   /* one label per row, left of the grid; `NULL` for none */
     const char *const *col_labels;   /* one label per column, under the grid; labels that would overlap are skipped */
     float cell;                /* cell size, default fits the width */
     float min, max;            /* value range, default the data's */
-    cui_color color;           /* hue of the scale, default the accent */
+    cui_color color;           /* the top step, default the accent; the steps mix toward it from the empty surface */
     const char *format;
     cui_size width;
 } cui_heatmap_opts;
@@ -1852,22 +2123,32 @@ CUI_API int cui_heatmap_ex(cui_ctx *ui, const char *id, const float *values, int
 typedef struct cui_calendar_heatmap_opts {
     int _;
     float cell;                /* size of a day's square in points, default 11 */
-    cui_color color;
+    cui_color color;           /* the top step, default the accent */
     const char *format;
     const char *unit;
 } cui_calendar_heatmap_opts;
 CUI_API int cui_calendar_heatmap_ex(cui_ctx *ui, const char *id, cui_date start, const float *values, int days, const cui_calendar_heatmap_opts *opts);
 
-/* Treemap: rectangles with areas proportional to their values. */
+/* Treemap: rectangles with areas proportional to their values, on neutral tiles graded
+ * by size, each with its label, value and share. The accent marks only the hovered or
+ * selected tile; an item's own `color` fills its tile instead. */
 typedef struct cui_viz_item {
     const char *label;
     float value;               /* the item's amount: its area, length or share, by chart (activity rings: 1 is a full turn) */
     cui_color color;
 } cui_viz_item;
-typedef struct cui_treemap_opts { int _; cui_size width; float height; const char *format; } cui_treemap_opts;
+typedef struct cui_treemap_opts {
+    int _;
+    cui_size width;
+    float height;              /* default 300 */
+    const char *format;        /* the values, e.g. "%.0f KB" */
+    int *selected;             /* the selected item or -1, kept by you; a click selects, a second click clears. `NULL`: no selection */
+} cui_treemap_opts;
 CUI_API int cui_treemap_ex(cui_ctx *ui, const char *id, const cui_viz_item *items, int count, const cui_treemap_opts *opts);
 
-/* Radar chart: series over shared axes (series[i].values[axis]). */
+/* Radar chart: series over shared axes (series[i].values[axis]), light fills with crisp
+ * outlines on hairline rings. The last series shows its points, or the one nearest the
+ * pointer, with a chip of the hovered value. */
 typedef struct cui_radar_opts {
     int _;
     float size;
@@ -1882,7 +2163,9 @@ CUI_API int cui_radar_chart_ex(cui_ctx *ui, const char *id, const cui_series *se
 typedef struct cui_funnel_opts { int _; cui_size width; float height; const char *format; cui_color color; } cui_funnel_opts;
 CUI_API int cui_funnel_ex(cui_ctx *ui, const char *id, const cui_viz_item *stages, int count, const cui_funnel_opts *opts);
 
-/* Sankey: flows between nodes; columns follow the links from the sources. */
+/* Sankey: flows between nodes; columns follow the links from the sources. Slim nodes in
+ * the colors you give them, flows shaded from source to target color, and hovering a node
+ * or a flow lights its whole path upstream and downstream. */
 typedef struct cui_sankey_link {
     int from;                  /* index of the node the flow leaves */
     int to;                    /* index of the node the flow enters */
@@ -1893,8 +2176,10 @@ typedef struct cui_sankey_opts {
     cui_size width;
     float height;
     const char *format;
-    float node_width;          /* width of the node bars in points, default 12 */
+    float node_width;          /* width of the node bars in points, default 6 */
+    const cui_color *node_colors;   /* one per node, colored by meaning; `NULL`, or an unset entry, falls back to the palette for outcomes and neutral gray for sources and steps */
 } cui_sankey_opts;
+/* Returns the clicked node index, node_count + the clicked input link index, or -1. */
 CUI_API int cui_sankey_ex(cui_ctx *ui, const char *id, const char *const *nodes, int node_count, const cui_sankey_link *links, int link_count,
                           const cui_sankey_opts *opts);
 
@@ -1955,27 +2240,47 @@ typedef struct cui_scatter_opts {
 } cui_scatter_opts;
 CUI_API int cui_scatter_chart_ex(cui_ctx *ui, const char *id, const cui_scatter_series *series, int count, const cui_scatter_opts *opts);
 
-/* Radial gauge: one value on a dial with colored bands, labelled ticks, a
- * needle and a target marker, for dashboards (speed, load, temperature, a
- * score against a goal). The needle springs to new values.
+/* Radial gauge: one value as a large number on an arc, for dashboards (load, speed,
+ * temperature, a score against a goal). Three styles:
+ *   CUI_GAUGE_SEGMENTS  a ring of short segments, lit in each band's tone up to the value,
+ *                       with the current band's name as a chip under the label
+ *   CUI_GAUGE_ARC       a track and a value arc with round caps, min and max at the ends,
+ *                       and a marker at `target`
+ *   CUI_GAUGE_RING      a slim full ring from the top, with `detail` under it
+ * CUI_GAUGE_AUTO (the default) picks the segments when `bands` are given and the arc
+ * otherwise. The arc fills to new values with a spring.
  *
- *     static const cui_gauge_band bands[] = { { 60, CUI_TONE_SUCCESS }, { 85, CUI_TONE_WARNING }, { 100, CUI_TONE_DANGER } };
+ *     static const cui_gauge_band bands[] = { { 60, CUI_TONE_SUCCESS }, { 85, CUI_TONE_WARNING, "Elevated" }, { 100, CUI_TONE_DANGER, "High" } };
  *     cui_radial_gauge(ui, "cpu", load, 0, 100, .unit = "%", .label = "CPU load", .bands = bands, .band_count = 3);
+ *     cui_radial_gauge(ui, "disk", 38, 0, 100, .unit = "%", .label = "Disk", .style = CUI_GAUGE_RING, .detail = "190 of 500 GB");
  */
-typedef struct cui_gauge_band { float to; cui_tone tone; } cui_gauge_band;   /* from the band before (or min) up to `to` */
+typedef struct cui_gauge_band {
+    float to;                  /* the band runs from the band before (or min) up to here */
+    cui_tone tone;             /* its color */
+    const char *name;          /* shown as a chip while the value is in this band (segments style); `NULL` for none */
+} cui_gauge_band;
+typedef enum cui_gauge_style {
+    CUI_GAUGE_AUTO = 0,        /* segments with `bands`, the arc without */
+    CUI_GAUGE_ARC,             /* a track and a value arc with round caps, min and max at its ends */
+    CUI_GAUGE_SEGMENTS,        /* short segments lit up to the value, in the band colors */
+    CUI_GAUGE_RING             /* a slim full ring starting at the top */
+} cui_gauge_style;
 typedef struct cui_radial_gauge_opts {
     int _;
     const char *label;         /* under the value */
-    const char *format;        /* the value and the tick labels, default "%.0f" */
-    const char *unit;          /* after the value, smaller */
+    const char *format;        /* the value, the ends and the target, default whole numbers with large ones shortened (1.8k) */
+    const char *unit;          /* after the value, smaller and muted */
     float size;                /* width, default 200; the height follows the sweep */
-    float sweep;               /* degrees of arc, default 240 (90 to 300) */
+    float sweep;               /* degrees of arc, default 270 (90 to 300); the ring is always a full turn */
     const cui_gauge_band *bands;   /* colored stretches of the arc, each from the one before up to its `to`; at most 16 */
     int band_count;            /* number of `bands` */
-    int ticks;                 /* labelled divisions, default 5; -1 hides the ticks */
+    int ticks;                 /* -1 hides the min and max labels at the ends of the arc */
     float target;              /* a marker on the arc, when show_target is set */
-    bool show_target;          /* draws the marker at `target` */
-    bool no_needle;            /* a thick arc filled to the value instead of a needle */
+    bool show_target;          /* draws the marker at `target`, labelled with its value (arc style) */
+    bool no_needle;            /* kept for older code; no style has a needle */
+    cui_gauge_style style;     /* CUI_GAUGE_AUTO picks segments with `bands`, else the arc */
+    const char *detail;        /* a muted line under the gauge, e.g. "190 of 500 GB"; `NULL` for none */
+    cui_color color;           /* the value's color; unset: the band the value is in, else the accent (the ring: the first series color) */
 } cui_radial_gauge_opts;
 CUI_API void cui_radial_gauge_ex(cui_ctx *ui, const char *id, float value, float min, float max, const cui_radial_gauge_opts *opts);
 
@@ -2140,7 +2445,8 @@ typedef struct cui_now_playing_opts {
     cui_size width;
     bool compact;              /* smaller artwork and padding, and no previous button */
 } cui_now_playing_opts;
-enum { CUI_PLAYER_TOGGLE = 1, CUI_PLAYER_PREV = 2, CUI_PLAYER_NEXT = 4, CUI_PLAYER_SEEK = 8 };
+/* what the user did, from the now playing card and the voice note: CUI_PLAYER_SPEED is the voice note's speed chip */
+enum { CUI_PLAYER_TOGGLE = 1, CUI_PLAYER_PREV = 2, CUI_PLAYER_NEXT = 4, CUI_PLAYER_SEEK = 8, CUI_PLAYER_SPEED = 16 };
 CUI_API int cui_now_playing_ex(cui_ctx *ui, const char *id, cui_now_playing *np, const cui_now_playing_opts *opts);
 
 /* ------------------------------------------------------------------------ */
@@ -2173,7 +2479,8 @@ typedef struct cui_tool_call_opts {
 } cui_tool_call_opts;
 CUI_API void cui_tool_call_ex(cui_ctx *ui, const char *id, const char *name, const cui_tool_call_opts *opts);
 
-/* Agent plan: steps with their status on a connected rail, and progress. */
+/* Agent plan: steps with their status on a connected rail, and progress.
+ * Reduced motion holds the running glyph still, including in tool calls. */
 typedef struct cui_plan_step {
     const char *title;         /* the step's text; shimmers while the step is running */
     const char *detail;        /* smaller muted line under the title (red when the step failed); may be `NULL` */
@@ -2254,8 +2561,16 @@ CUI_API bool cui_model_picker_ex(cui_ctx *ui, const char *id, const cui_model *m
 /* Chat composer: a growing text area with attachments, a model picker and a
  * send button that turns into stop while busy. Enter sends, Shift+Enter adds
  * a line. Returns CUI_COMPOSER_* flags; *removed is the attachment whose x
- * was clicked. */
-enum { CUI_COMPOSER_SEND = 1, CUI_COMPOSER_STOP = 2, CUI_COMPOSER_ATTACH = 4, CUI_COMPOSER_REMOVE = 8, CUI_COMPOSER_MODEL = 16 };
+ * was clicked.
+ *
+ * With `mic`, a microphone button asks to record a voice message
+ * (CUI_COMPOSER_RECORD). While you set `recording`, the composer is a
+ * recorder: a recording dot, the time, your mic levels scrolling by as a voice
+ * waveform, Cancel (CUI_COMPOSER_CANCEL, Escape) and Send (CUI_COMPOSER_VOICE).
+ * It records nothing itself: you open the microphone, push its levels and
+ * clear `recording` when the take is sent or thrown away. */
+enum { CUI_COMPOSER_SEND = 1, CUI_COMPOSER_STOP = 2, CUI_COMPOSER_ATTACH = 4, CUI_COMPOSER_REMOVE = 8, CUI_COMPOSER_MODEL = 16,
+       CUI_COMPOSER_RECORD = 32, CUI_COMPOSER_CANCEL = 64, CUI_COMPOSER_VOICE = 128 };
 typedef struct cui_composer_opts {
     int _;
     const char *placeholder;
@@ -2268,14 +2583,106 @@ typedef struct cui_composer_opts {
     int *model;                /* index of the chosen model, read and written */
     int max_lines;             /* default 8 */
     cui_size width;
+    bool mic;                  /* a microphone button beside send, which returns `CUI_COMPOSER_RECORD` */
+    bool recording;            /* shows the recorder instead of the text: set it on `CUI_COMPOSER_RECORD`, clear it on cancel or send */
+    const float *levels;       /* the microphone's levels while recording (0..1, newest last), drawn as a scrolling voice waveform */
+    int level_count;           /* number of `levels` */
+    float record_seconds;      /* how long the take is so far, shown beside the recording dot */
 } cui_composer_opts;
 CUI_API int cui_chat_composer_ex(cui_ctx *ui, const char *id, char *buf, size_t cap, const cui_composer_opts *opts);
 
-/* Voice orb: a living shape for voice modes. level is the input or output
+/* What a voice conversation is doing, for the voice session's label (and the
+ * voice orb, which shows the first four). */
+typedef enum cui_voice_state { CUI_VOICE_IDLE = 0, CUI_VOICE_LISTENING, CUI_VOICE_THINKING, CUI_VOICE_SPEAKING, CUI_VOICE_MUTED } cui_voice_state;
+
+/* Deprecated: use the voice session (cui_voice_session), the voice waveform
+ * (cui_voice_wave) or the composer's recorder instead. Kept so existing code
+ * builds; it gets no new features.
+ * Voice orb: a living shape for voice modes. level is the input or output
  * loudness (0..1). Returns true when clicked. */
-typedef enum cui_voice_state { CUI_VOICE_IDLE = 0, CUI_VOICE_LISTENING, CUI_VOICE_THINKING, CUI_VOICE_SPEAKING } cui_voice_state;
 typedef struct cui_voice_orb_opts { int _; float size; cui_color color; } cui_voice_orb_opts;
 CUI_API bool cui_voice_orb_ex(cui_ctx *ui, const char *id, cui_voice_state state, float level, const cui_voice_orb_opts *opts);
+
+/* ------------------------------------------------------------------------ */
+/* Voice                                                                    */
+/* ------------------------------------------------------------------------ */
+
+/* Voice waveform: a voice drawn as fine dots, 13 rows mirrored around a center
+ * line. Each level (0..1, newest last) is one column, and a dot lights in
+ * proportion to how much of it the level covers, so the edges stay smooth.
+ *
+ * By default the newest levels scroll in at the right and the oldest fade at
+ * the left edge: push the loudness into a buffer each time you measure it, and
+ * the strip moves only when you do. With `clip` the whole buffer is resampled
+ * to fit; with `progress` as well, the played part is in the accent, the rest
+ * gray, with a playhead, and clicking, dragging or the arrow keys seek
+ * (returns true when they did). A level below zero (CUI_VOICE_SILENT) is no
+ * audio at all, silence or thinking: only the faint center line shows there.
+ *
+ *     levels[n++] = mic_level();                       // each time you measure
+ *     cui_voice_wave(ui, "mic", levels, n);
+ */
+#define CUI_VOICE_SILENT (-1.0f)
+typedef enum cui_voice_owner { CUI_VOICE_YOU = 0, CUI_VOICE_REPLY = 1 } cui_voice_owner;
+typedef struct cui_voice_wave_opts {
+    int _;
+    bool clip;                 /* the whole clip resampled to the width, instead of the newest levels scrolling in */
+    float *progress;           /* a clip's played fraction (0..1): colors the played part, draws a playhead and seeks; implies `clip` */
+    const uint8_t *owners;     /* one per level, `CUI_VOICE_YOU` or `CUI_VOICE_REPLY`, for two voices on one timeline; `NULL`: all `owner` */
+    cui_voice_owner owner;     /* whose voice it is: you in the foreground color, the reply in the accent */
+    cui_color color;           /* lit dots in this color instead of the owner's */
+    float pitch;               /* distance between dot centers in points, default 3.6; the strip is 14 pitches tall */
+    float step;                /* how far an arrow key seeks, as a fraction of the clip, default 0.05 */
+    cui_size width;            /* default fill */
+} cui_voice_wave_opts;
+CUI_API bool cui_voice_wave_ex(cui_ctx *ui, const char *id, const float *levels, int count, const cui_voice_wave_opts *opts);
+/* Resamples a clip to `columns` levels the way the clip strip does (the loudest
+ * level of each stretch; a stretch with no audio stays CUI_VOICE_SILENT), for
+ * keeping a short waveform with a message. Returns the number written. */
+CUI_API int cui_voice_resample(const float *levels, int count, float *out, int columns);
+
+/* Voice note: a recorded message in a bubble, with play and pause, its voice
+ * waveform as the seek bar (click or drag; the arrow keys step), the time
+ * played and the length, and a speed chip that cycles 1x, 1.5x and 2x. It
+ * plays nothing itself: you play the audio and pass the position on every
+ * frame. Returns CUI_PLAYER_TOGGLE, CUI_PLAYER_SEEK and CUI_PLAYER_SPEED. */
+typedef struct cui_voice_note {
+    const float *levels;       /* the clip's loudness, 0..1, oldest first (resampled to fit) */
+    int count;                 /* number of `levels` */
+    float position;            /* seconds played; written when the user seeks */
+    float duration;            /* length of the clip in seconds */
+    float speed;               /* playback rate, 1, 1.5 or 2 (0 reads as 1); the chip moves it to the next */
+    bool playing;              /* shows pause instead of play; the play button flips it */
+} cui_voice_note;
+typedef struct cui_voice_note_opts {
+    int _;
+    bool mine;                 /* a message you sent: tinted with the accent and placed at the end of the row */
+    cui_size width;            /* default 330 points, narrower in a narrower container */
+} cui_voice_note_opts;
+CUI_API int cui_voice_note_ex(cui_ctx *ui, const char *id, cui_voice_note *note, const cui_voice_note_opts *opts);
+
+/* Voice session: a spoken conversation with an assistant on one timeline. The
+ * waveform scrolls with both voices, you in the foreground color and the
+ * assistant in the accent (tag each level in `owners`); a label says what is
+ * happening (Listening, Thinking..., Speaking, Muted: the `state` you pass),
+ * with a legend, the live transcript under it and Mute and End buttons. While
+ * the assistant thinks there is no sound, so push CUI_VOICE_SILENT: the strip
+ * shows a flat gap rather than a made-up wave. Returns CUI_VOICE_SESSION_*. */
+enum { CUI_VOICE_SESSION_MUTE = 1, CUI_VOICE_SESSION_END = 2 };
+typedef struct cui_voice_session_opts {
+    int _;
+    const uint8_t *owners;     /* one per level: `CUI_VOICE_YOU` or `CUI_VOICE_REPLY`; `NULL`: all yours */
+    const char *label;         /* text for the state instead of "Listening", "Thinking...", "Speaking", "Muted" or "Waiting" */
+    const char *transcript;    /* the words of the current turn spoken so far, under the strip; `NULL` for none */
+    const char *upcoming;      /* the rest of the turn, not spoken yet: dimmed after `transcript` */
+    cui_voice_owner speaker;   /* whose turn the transcript is, named before it */
+    const char *you;           /* your name in the legend and the transcript, default "You" */
+    const char *assistant;     /* the assistant's name, default "Assistant" */
+    bool *muted;               /* the microphone is muted: the button reads Unmute; a click flips it. `NULL` leaves Mute out */
+    bool no_end;               /* leaves the End button out */
+    cui_size width;            /* default fill */
+} cui_voice_session_opts;
+CUI_API int cui_voice_session_ex(cui_ctx *ui, const char *id, cui_voice_state state, const float *levels, int count, const cui_voice_session_opts *opts);
 
 /* ------------------------------------------------------------------------ */
 /* Planning                                                                 */
@@ -2333,6 +2740,10 @@ typedef struct cui_week_opts {
     cui_size height;
     bool read_only;
 } cui_week_opts;
+/* Returns the activated event index or -1. Read-only events still activate.
+ * Pointer activation requires staying within the drag threshold through release.
+ * A drag ends when the event list shrinks, the calendar is disabled or
+ * `read_only` changes; moving the event again takes a new press. */
 CUI_API int cui_week_calendar_ex(cui_ctx *ui, const char *id, cui_date week_start, cui_cal_event *events, int count, const cui_week_opts *opts);
 
 /* Month calendar: a month grid with events. All-day and multi-day events
@@ -2348,7 +2759,7 @@ CUI_API int cui_week_calendar_ex(cui_ctx *ui, const char *id, cui_date week_star
  *
  * With the grid focused the arrows move the selected day (into the next or
  * previous month), Page Up and Page Down change month, Home goes to today
- * and Enter activates the day. */
+ * and Enter activates the selected day even when the pointer rests on another day. */
 typedef struct cui_month_event {
     const char *title;         /* shown on the event's bar, or after the time of a timed event */
     cui_date start, end;       /* inclusive; an unset or earlier end means one day */
@@ -2375,26 +2786,38 @@ typedef struct cui_month_result {
 CUI_API cui_month_result cui_month_calendar_ex(cui_ctx *ui, const char *id, cui_date *month, const cui_month_event *events, int count, const cui_month_opts *opts);
 
 /* Gantt chart: a task list beside a timeline of bars. Drag a bar to move
- * it, its ends to resize it. Dependencies are drawn as elbow arrows.
- * Returns the index of a clicked task, or -1. */
+ * it, its ends to resize it. Bars are colored by state (done, active,
+ * planned) with their progress inside, dependencies are soft curves with
+ * small arrowheads, and today is an accent line. Returns the index of a
+ * clicked task, or -1. */
+typedef enum cui_gantt_state {
+    CUI_GANTT_AUTO = 0,        /* from the progress and today: 1 is done, more than 0 is active; untouched work is planned when it starts after today, else active */
+    CUI_GANTT_DONE,            /* a green bar */
+    CUI_GANTT_ACTIVE,          /* a bar in the first series color */
+    CUI_GANTT_PLANNED          /* a dashed, lightly tinted bar */
+} cui_gantt_state;
 typedef struct cui_gantt_task {
     const char *name;          /* shown in the task list and, when it fits, on the bar */
     const char *owner;         /* a name: shows that person's avatar in the task list; `NULL` for none */
     int start;                 /* day the bar starts, counted from `origin`; dragging the bar changes it */
     int end;                   /* day the bar ends, counted from `origin` (it is end - start days long); dragging changes it */
-    float progress;            /* 0..1: the part of the bar drawn darker, as done */
-    cui_tone tone;
-    int depends_on;            /* index of the task this one waits for: an arrow runs from its end to this start. -1 for none */
-    bool milestone;            /* a diamond at `start` instead of a bar; it cannot be resized */
+    float progress;            /* 0..1: the part of the bar filled in, as done, with the percentage at its end */
+    cui_tone tone;             /* overrides the state's color when set */
+    int depends_on;            /* index of the task this one waits for: a curve runs from its end to this start. -1 for none */
+    bool milestone;            /* an outlined diamond at `start`, labelled with its name and date, instead of a bar; it cannot be resized */
+    cui_gantt_state state;     /* done, active or planned; CUI_GANTT_AUTO works it out from `progress` and `today` */
 } cui_gantt_task;
 typedef struct cui_gantt_opts {
     int _;
     float day_width;           /* points per day, default 30 */
     float row_height;          /* points per task row, default 40 */
     cui_size height;
-    int today;                 /* day to mark as today, counted from `origin`; 0 marks none */
+    int today;                 /* day to mark as today, counted from `origin`, with an accent line and a "Today" chip; 0 marks none */
     bool read_only;
 } cui_gantt_opts;
+/* Returns the activated task index or -1. Read-only tasks still activate.
+ * A drag ends when the task list shrinks, the chart is disabled or
+ * `read_only` changes; moving the bar again takes a new press. */
 CUI_API int cui_gantt_ex(cui_ctx *ui, const char *id, cui_gantt_task *tasks, int count, cui_date origin, int days, const cui_gantt_opts *opts);
 
 /* ------------------------------------------------------------------------ */
@@ -2413,7 +2836,8 @@ CUI_API bool cui_hover_card_begin(cui_ctx *ui, const char *id, const cui_hover_c
 CUI_API void cui_hover_card_end(cui_ctx *ui);
 
 /* Confirm popover: a small question anchored to the previous component.
- * Open it with cui_popover_open(ui, id). Returns true when confirmed. */
+ * Open it with cui_popover_open(ui, id). A new Enter press can confirm it.
+ * Returns true when confirmed. */
 typedef struct cui_confirm_popover_opts {
     int _;
     const char *title;            /* the question, in medium weight at the top, e.g. "Delete this file?" */
@@ -2496,6 +2920,30 @@ typedef struct cui_checklist_opts {
     const char *description;
 } cui_checklist_opts;
 CUI_API int cui_checklist_ex(cui_ctx *ui, const char *id, cui_check_step *steps, int count, const cui_checklist_opts *opts);
+
+/* Veil: covers what is built inside it (a picture, a secret such as an API key, a spoiler)
+ * with a slowly moving dither in muted tones that keeps its space. A click, or Enter or
+ * Space, reveals it: the veil dissolves dot by dot in about a quarter of a second, and
+ * comes back the same way when *revealed is set to false again. While covered, the content
+ * takes no clicks and no keyboard focus. Reduced motion holds the noise still and reveals at once.
+ *
+ *     static bool shown;
+ *     cui_veil(ui, "photo", &shown, .label = "Sensitive image", .hint = "Click to show", .toggle = true) {
+ *         cui_image(ui, tex, .width = CUI_PX(240), .height = CUI_PX(150));
+ *     }
+ *
+ * cui_veil_begin_ex returns true on the frame a click or a key changed *revealed. */
+typedef struct cui_veil_opts {
+    int _;
+    const char *label;         /* a line in the middle of the veil, e.g. "Sensitive image"; `NULL` for none */
+    const char *hint;          /* a smaller line under it, e.g. "Click to show" */
+    bool toggle;               /* a click on the revealed content covers it again */
+    float radius;              /* corners of the veil, default 0 */
+    cui_color color;           /* the veil's ground, default the muted surface; its dots are a step toward the text color */
+    cui_size width;            /* default: the content's width */
+} cui_veil_opts;
+CUI_API bool cui_veil_begin_ex(cui_ctx *ui, const char *id, bool *revealed, const cui_veil_opts *opts);
+CUI_API void cui_veil_end(cui_ctx *ui);
 
 /* ------------------------------------------------------------------------ */
 /* Pickers                                                                  */
@@ -2833,8 +3281,30 @@ CUI_API void cui_menu_bar_menu_end(cui_ctx *ui);
 /* Toolbar: a row of compact icon buttons, toggles, separators and small text
  * buttons. Icon only buttons show their tooltip as their name. Items that do
  * not fit collapse, from the end, into a "more" menu; an item chosen there
- * returns true on the next frame. */
-typedef struct cui_toolbar_opts { int _; bool no_border; } cui_toolbar_opts;
+ * returns true on the next frame. Tab moves through the items.
+ *
+ * The grouped style puts groups of items on raised wells inside one muted
+ * pill, with an optional inset radio set and a filled primary action at the
+ * end; the floating style is one bordered pill for bars that sit over
+ * content (a format bar, the actions under an image). Both are as wide as
+ * their items and measure the room their parent gives them for the overflow.
+ *
+ *     cui_toolbar(ui, "edit", .style = CUI_TOOLBAR_GROUPED) {
+ *         cui_toolbar_group(ui) { cui_toolbar_button(ui, CUI_ICON_UNDO_2, .tooltip = "Undo"); ... }
+ *         cui_toolbar_group(ui) { ...; cui_toolbar_radio(ui, "mode", icons, 3, &mode, .labels = names); }
+ *         if (cui_toolbar_primary(ui, CUI_ICON_SPARKLES, .tooltip = "Generate")) generate();
+ *     }
+ */
+typedef enum cui_toolbar_style {
+    CUI_TOOLBAR_PLAIN = 0,     /* a strip as wide as its parent, with a hairline under it */
+    CUI_TOOLBAR_GROUPED,       /* raised groups inside one muted pill */
+    CUI_TOOLBAR_FLOATING       /* one bordered surface pill */
+} cui_toolbar_style;
+typedef struct cui_toolbar_opts {
+    int _;
+    bool no_border;            /* plain style: no hairline under the strip */
+    cui_toolbar_style style;
+} cui_toolbar_opts;
 CUI_API void cui_toolbar_begin(cui_ctx *ui, const char *id, const cui_toolbar_opts *opts);
 CUI_API void cui_toolbar_end(cui_ctx *ui);
 typedef struct cui_tool_opts {
@@ -2844,10 +3314,31 @@ typedef struct cui_tool_opts {
     const char *shortcut;      /* shown in the tooltip, e.g. "Ctrl B" */
     bool *toggle;              /* toggle button: flipped on click, shown pressed while true */
     bool disabled;
+    cui_tone tone;             /* icon and label color: always on a plain button (CUI_TONE_DANGER for delete), only while on for a toggle */
+    bool flyout;               /* the corner mark that says the button opens more options (cui_flyout_mark) */
 } cui_tool_opts;
 CUI_API bool cui_toolbar_button_ex(cui_ctx *ui, const char *icon, const cui_tool_opts *opts);
 CUI_API void cui_toolbar_separator(cui_ctx *ui);
 CUI_API void cui_toolbar_spacer(cui_ctx *ui);   /* pushes the following items to the right */
+/* A group of items: a raised well in the grouped style, set apart by separators in the others. */
+CUI_API void cui_toolbar_group_begin(cui_ctx *ui);
+CUI_API void cui_toolbar_group_end(cui_ctx *ui);
+/* An inset set of icons of which one is on, like a segmented control. Left and
+ * Right move the choice. Returns true when *index changed. In the overflow menu
+ * each icon is an item named by its label. */
+typedef struct cui_toolbar_radio_opts {
+    int _;
+    const char *const *labels; /* a name for each icon, for the overflow menu; `NULL` leaves them unnamed */
+} cui_toolbar_radio_opts;
+CUI_API bool cui_toolbar_radio_ex(cui_ctx *ui, const char *id, const char *const *icons, int count, int *index, const cui_toolbar_radio_opts *opts);
+/* The main action at the end of a grouped toolbar: a larger button filled with the text color. */
+CUI_API bool cui_toolbar_primary_ex(cui_ctx *ui, const char *icon, const cui_tool_opts *opts);
+/* A small picker that steps through its choices on each click ("1x", "2x", "4x").
+ * Returns true when *index changed. */
+CUI_API bool cui_toolbar_cycle_ex(cui_ctx *ui, const char *id, const char *const *items, int count, int *index, const cui_tool_opts *opts);
+/* A small triangle in the corner of the previous component (at the end side) that
+ * says it opens a flyout or a menu. Any button can take it. */
+CUI_API void cui_flyout_mark(cui_ctx *ui);
 
 /* Status bar: a thin bar along the bottom of a window, with a hairline on
  * top and no fill of its own (put it in a box with the background you want).
@@ -3410,6 +3901,168 @@ CUI_API cui_gradient_result cui_gradient_editor_ex(cui_ctx *ui, const char *id, 
  * continue past the first and last stop). */
 CUI_API cui_color cui_gradient_eval(const cui_gradient_stop *stops, int count, float t);
 
+/* ---- Creative controls ---- */
+
+/* Status tag: an icon, a label and a fill tinted by the state, for a table cell, a card
+ * header or a group of tags. "In progress" turns its dashed ring slowly (it holds still with
+ * reduced motion). A NULL label shows the state's English name.
+ *
+ *     cui_status_tag(ui, "Failed", CUI_TAG_FAILED);
+ *     if (cui_status_tag(ui, name, CUI_TAG_CUSTOM, .icon = CUI_ICON_TAG, .tone = CUI_TONE_TEAL, .removable = true)) remove(name);
+ */
+typedef enum cui_tag_status {
+    CUI_TAG_PENDING = 0, CUI_TAG_IN_PROGRESS, CUI_TAG_SUBMITTED, CUI_TAG_IN_REVIEW,
+    CUI_TAG_SUCCESS, CUI_TAG_FAILED, CUI_TAG_EXPIRED,
+    CUI_TAG_CUSTOM             /* your `icon` and `tone` only */
+} cui_tag_status;
+typedef struct cui_status_tag_opts {
+    int _;
+    cui_control_size size;     /* CUI_SIZE_SM is 24 points high, for tables and tag groups; default 30 */
+    bool removable;            /* the tag becomes a button that shows an x on hover: the call returns true when it is clicked, or on Enter, Delete or Backspace */
+    const char *icon;          /* instead of the state's icon */
+    cui_tone tone;             /* instead of the state's color; 0 keeps it (gray for CUI_TAG_CUSTOM) */
+    const char *id;            /* identity of a removable tag when two share a label */
+} cui_status_tag_opts;
+CUI_API bool cui_status_tag_ex(cui_ctx *ui, const char *label, cui_tag_status status, const cui_status_tag_opts *opts);
+
+/* Ratio slider: a whole split into two named parts, with a bar between them to drag.
+ * *ratio is the first part's share, 0..1. Both names and percentages stay readable: the
+ * split stops where a part would get too narrow for them. Arrows move one step (Shift:
+ * ten), Home and End go to the limits.
+ *
+ *     cui_ratio_slider(ui, "COFFEE", "MILK", &coffee, .tone = CUI_TONE_WARNING);
+ */
+typedef struct cui_ratio_slider_opts {
+    int _;
+    cui_tone tone;             /* color of the first part; 0 uses the accent */
+    float step;                /* arrow key step as a share, default 0.01 (one percent) */
+    float height;              /* default 52 */
+    cui_size width;            /* default fill */
+    bool disabled;
+} cui_ratio_slider_opts;
+CUI_API bool cui_ratio_slider_ex(cui_ctx *ui, const char *first, const char *second, float *ratio, const cui_ratio_slider_opts *opts);
+
+/* The controls below sit in a control well: a rounded panel with the label on the left,
+ * the value on the right and the control under them. `plain` drops the panel and keeps
+ * the label row and the control. A label that starts with "##" shows no label row. Those
+ * that take an action button return these flags: */
+enum { CUI_WELL_CHANGED = 1, CUI_WELL_ACTION = 2 };   /* the value changed; the action button was pressed */
+
+/* Gradient slider: a slider whose track is the value itself (a hue wheel, a white balance
+ * temperature, an opacity over a checkerboard, or your own stops), with a thumb filled with
+ * the color under it. An optional tool button after the track (an eyedropper) reports
+ * clicks. Keys as for the slider. Returns CUI_WELL_* flags.
+ *
+ *     cui_gradient_slider(ui, "Hue", &hue, 0, 360, .swatch = true);
+ *     cui_gradient_slider(ui, "Opacity", &alpha, 0, 1, .track = CUI_GRADIENT_OPACITY, .color = brush);
+ */
+typedef enum cui_gradient_track { CUI_GRADIENT_HUE = 0, CUI_GRADIENT_TEMPERATURE, CUI_GRADIENT_OPACITY } cui_gradient_track;
+typedef struct cui_gradient_slider_opts {
+    int _;
+    cui_gradient_track track;  /* the built-in track, default the hue wheel; ignored when `stops` is set */
+    const cui_gradient_stop *stops;  /* your own track, positions 0..1 */
+    int stop_count;
+    cui_color color;           /* CUI_GRADIENT_OPACITY: the color it fades in; unset: the accent */
+    cui_color *color_out;      /* receives the color under the thumb */
+    float step;                /* snap to multiples of step from min; 0 = continuous */
+    const char *format;        /* printf format for the value; default "%.0f°" for hue, "%.0f K" for temperature, a percent of the range for opacity, "%.0f" for stops */
+    const char *value;         /* text at the right of the label instead of the formatted value */
+    bool swatch;               /* a dot in the color under the thumb after the track */
+    const char *tool;          /* icon of a button after the track, e.g. a picker; a click returns CUI_WELL_ACTION */
+    const char *tool_tooltip;  /* names the tool button */
+    bool tool_on;              /* shows the tool button pressed, e.g. while picking */
+    bool plain;                /* no well around it */
+    bool disabled;
+} cui_gradient_slider_opts;
+CUI_API int cui_gradient_slider_ex(cui_ctx *ui, const char *label, float *value, float min, float max, const cui_gradient_slider_opts *opts);
+
+/* Step slider: a few discrete stops marked with dots; the thumb snaps to each and glides
+ * between them. Arrows move one stop, Home and End go to the ends. Returns CUI_WELL_* flags.
+ *
+ *     cui_step_slider(ui, "Variations", &n, 1, 4, .tool = CUI_ICON_REFRESH_CW, .tool_tooltip = "Generate");
+ */
+typedef struct cui_step_slider_opts {
+    int _;
+    const char *const *labels; /* a name for each stop, shown as the value: labels[*value - min] */
+    const char *format;        /* printf format for the value, default "%d" */
+    const char *value;         /* text at the right of the label instead */
+    const char *tool;          /* icon of a button after the track; a click returns CUI_WELL_ACTION */
+    const char *tool_tooltip;
+    bool tool_on;
+    bool plain;
+    bool disabled;
+} cui_step_slider_opts;
+CUI_API int cui_step_slider_ex(cui_ctx *ui, const char *label, int *value, int min, int max, const cui_step_slider_opts *opts);
+
+/* Palette strip: a joined row of color swatches (up to 16). A click on a swatch locks or
+ * unlocks it, and the shuffle button after the row recolors the unlocked ones. The swatch
+ * under the pointer widens and shows its hex code. Tab reaches the swatches, Left and
+ * Right move between them, Space or Enter locks. Returns CUI_WELL_CHANGED when a lock or a
+ * color changed and CUI_WELL_ACTION when shuffle was pressed.
+ *
+ *     static uint32_t seed = 7;
+ *     cui_palette_strip(ui, "Color palette", colors, locked, 5, .seed = &seed);
+ */
+typedef struct cui_palette_strip_opts {
+    int _;
+    uint32_t *seed;            /* shuffle state, yours: shuffle recolors the unlocked swatches from it and moves it on, so the same seed gives the same colors; NULL only reports the press */
+    const char *value;         /* text at the right of the label, e.g. "Click a swatch to lock it" */
+    bool no_shuffle;           /* no shuffle button */
+    float height;              /* default 32 */
+    bool plain;
+} cui_palette_strip_opts;
+CUI_API int cui_palette_strip_ex(cui_ctx *ui, const char *label, cui_color *colors, bool *locked, int count, const cui_palette_strip_opts *opts);
+
+/* Aspect ratio picker: each choice drawn as a rectangle of its own proportions with its
+ * ratio under it, and an optional dashed "Custom". The value at the right of the label is
+ * the size in pixels. Tab reaches the choices, Left and Right move between them.
+ *
+ *     static const cui_aspect sizes[] = { { 1, 1 }, { 4, 3 }, { 16, 9 } };
+ *     cui_aspect_picker(ui, "Aspect ratio", &pick, .ratios = sizes, .count = 3, .custom = true);
+ */
+typedef struct cui_aspect { int w, h; const char *label; } cui_aspect;   /* label NULL shows "w:h" */
+typedef struct cui_aspect_picker_opts {
+    int _;
+    const cui_aspect *ratios;  /* your choices; NULL: 1:1, 4:5, 3:2, 16:9, 9:16 and 21:9 */
+    int count;
+    bool custom;               /* adds a "Custom" choice after a divider; *index == the count of choices selects it */
+    const char *custom_label;  /* default "Custom" */
+    int base;                  /* the short side in pixels, for the size at the right of the label; default 1080, negative hides the size */
+    const char *value;         /* text at the right of the label instead of the size */
+    bool plain;
+} cui_aspect_picker_opts;
+CUI_API bool cui_aspect_picker_ex(cui_ctx *ui, const char *label, int *index, const cui_aspect_picker_opts *opts);
+
+/* Option field with action: a compact segmented choice and the icon button of the action it
+ * feeds (save as png, jpg or webp, then download). Returns CUI_WELL_* flags.
+ *
+ *     if (cui_option_action(ui, "Save as", formats, 3, &fmt, CUI_ICON_DOWNLOAD, .tooltip = "Download") & CUI_WELL_ACTION) save(fmt);
+ */
+typedef struct cui_option_action_opts {
+    int _;
+    const char *tooltip;       /* names the action button */
+    bool action_on;            /* shows the action button pressed */
+    bool action_disabled;
+    const char *value;         /* text at the right of the label */
+    bool plain;
+} cui_option_action_opts;
+CUI_API int cui_option_action_ex(cui_ctx *ui, const char *label, const char *const *items, int count, int *index, const char *icon, const cui_option_action_opts *opts);
+
+/* Seed field: a random seed in the monospaced font. The dice rolls a new one, its digits
+ * rolling into place, and the lock keeps it fixed (the dice is off while locked). Returns
+ * CUI_WELL_CHANGED when the seed or the lock changed and CUI_WELL_ACTION on a roll.
+ *
+ *     cui_seed_field(ui, "Seed", &seed, &fixed, .value = fixed ? "Same image every run" : "Random each run");
+ */
+typedef struct cui_seed_field_opts {
+    int _;
+    const char *value;         /* text at the right of the label */
+    const char *random_text;   /* the mode word in the field while unlocked, default "random" */
+    const char *fixed_text;    /* and while locked, default "fixed" */
+    bool plain;
+} cui_seed_field_opts;
+CUI_API int cui_seed_field_ex(cui_ctx *ui, const char *label, uint32_t *seed, bool *locked, const cui_seed_field_opts *opts);
+
 /* ---- Timeline ---- */
 
 /* Timeline editor (dope sheet): a track list on the left, a time ruler on
@@ -3640,6 +4293,7 @@ typedef struct cui_query_opts {
     int max_depth;             /* how deep groups may nest, default 3 */
     bool read_only;
 } cui_query_opts;
+/* Read-only and disabled builders preserve the input rules and count. */
 CUI_API bool cui_query_builder_ex(cui_ctx *ui, const char *id, const cui_query_field *fields, int field_count,
                                   cui_query_node *nodes, int *count, int capacity, const cui_query_opts *opts);
 /* the operators of a type: text "is", "is not", "contains", "does not contain",
@@ -3802,7 +4456,15 @@ CUI_API cui_waterfall_result cui_waterfall_ex(cui_ctx *ui, const char *id, const
  * name folds it. Keys: Left and Right step through the selected span's lane,
  * + and - zoom, F fits, Esc clears. Spans must be sorted by track, depth and
  * start (cui_trace_sort), with no overlap within a depth of a track. Like the
- * flame graph, only what is in view is visited. */
+ * flame graph, only what is in view is visited.
+ *
+ * Links draw dependencies between spans (a request and the work it caused, a
+ * message and the turn it woke): a curve from the end of one span to the start
+ * of another, with an arrowhead, across lanes. A link is drawn when the time
+ * range it covers meets the view; an end off screen runs to the edge. A folded
+ * lane's links meet its top row. Links touching the selected or hovered span,
+ * and the link under the pointer (hovered_link), are drawn bright; the rest
+ * subdued. cui_trace_span_rect says where a span was drawn, for overlays. */
 typedef struct cui_trace_track {
     const char *name;          /* the lane's name, in the column on the left */
     bool collapsed;            /* the lane shows only its top row; a click on its name toggles this */
@@ -3816,6 +4478,12 @@ typedef struct cui_trace_span {
     uint32_t color_key;        /* picks the color; 0: hashed from the name */
 } cui_trace_span;
 typedef struct cui_trace_marker { const char *name; double time; cui_tone tone; } cui_trace_marker;
+typedef struct cui_trace_link {
+    int from, to;              /* indices into the spans: from the end of `from` to the start of `to` */
+    cui_tone tone;             /* the curve's color; CUI_TONE_NEUTRAL (0): the emphasis color */
+    float width;               /* line width in points; 0: 1.25 */
+    bool dashed;               /* a weaker or inferred dependency */
+} cui_trace_link;
 typedef struct cui_trace_view {
     double start, end;               /* visible time range; end <= start fits everything */
     float scroll;                    /* points scrolled down */
@@ -3828,15 +4496,27 @@ typedef struct cui_trace_opts {
     float row_height;                /* default 20 */
     const cui_trace_marker *markers; /* moments drawn as lines across every lane, named in a strip under the ruler */
     int marker_count;                /* number of `markers` */
+    const cui_trace_link *links;     /* dependencies drawn as curves between spans */
+    int link_count;                  /* number of `links` */
 } cui_trace_opts;
 typedef struct cui_trace_result {
     bool selection_changed;    /* `*selected` changed this frame (click or keys) */
-    bool view_changed;         /* the visible time range or the scroll in `*view` changed (zoom, pan, fit) */
+    bool view_changed;         /* time range, scroll position, or measurement in `*view` changed */
     int hovered;               /* span under the pointer, or -1 */
+    int hovered_link;          /* link under the pointer (when no span is), or -1 */
 } cui_trace_result;
 CUI_API cui_trace_result cui_trace_view_ex(cui_ctx *ui, const char *id, cui_trace_track *tracks, int track_count,
                                            const cui_trace_span *spans, int span_count, cui_trace_view *view, int *selected, const cui_trace_opts *opts);
 CUI_API void cui_trace_sort(cui_trace_span *spans, int count);
+/* Where a span is drawn, in points (zero size when out of view or in a folded
+ * lane below its top row): its time extent and row, as cui_flame_span_rect
+ * gives one; the bar inside is a point narrower, the gap between neighbours,
+ * and a selected sliver is widened to 3 points. trace is the view's id:
+ * cui_last_id(ui) right after the call. Asked right after the call, it
+ * answers at this frame's view in the rectangle of the previous frame, as
+ * this frame is not laid out yet; after cui_end_frame, where this frame drew
+ * it, until the next frame begins. */
+CUI_API cui_rect cui_trace_span_rect(cui_ctx *ui, cui_id trace, const cui_trace_span *span);
 
 /* ---- Regular expressions and the regex tester ---- */
 
@@ -4101,6 +4781,22 @@ typedef enum cui_axis_units {
     CUI_AXIS_HOURS             /* hours shown as a time of day: 12.25 is 12:15, and 30 is 06:00 the next day */
 } cui_axis_units;
 
+/* Writes the label for `value` into `out`, for an axis or a readout that a format string
+ * cannot describe: month names, dates, a locale's decimal comma. At most `capacity` bytes,
+ * the terminating zero included (`capacity` is at least 64); longer text is cut. Called while
+ * the frame ends, so `user` must stay valid until cui_end_frame. A value from the axis can
+ * carry rounding error from the label step: round it before using it as an index.
+ *
+ *     static void month_name(void *user, double value, char *out, size_t capacity) {
+ *         static const char *const names[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+ *                                              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+ *         long m = lround(value);
+ *         (void)user;
+ *         snprintf(out, capacity, "%s", m >= 1 && m <= 12 ? names[m - 1] : "");
+ *     }
+ */
+typedef void (*cui_axis_label_fn)(void *user, double value, char *out, size_t capacity);
+
 /* Dot-matrix chart: values drawn as a grid of dots, lit up to each column's value and dim
  * above it. Several series stack, each in its own band, and an `accent` series is drawn in
  * the accent color: the item being edited, or the part that matters. The pointer, or the
@@ -4138,10 +4834,14 @@ typedef struct cui_dot_chart_opts {
     bool no_readout;           /* no value label under the pointer */
     const cui_chart_annotation *annotations;   /* lines and points drawn over the dots */
     int annotation_count;      /* number of `annotations` */
+    cui_axis_label_fn x_label; /* writes the x labels and the readout's x in place of x_units and x_format; x_units still picks the spacing */
+    void *x_label_user;        /* passed to `x_label` as its first argument */
+    cui_axis_label_fn value_label;   /* writes the readout's value in place of `format`; `unit` still follows it */
+    void *value_label_user;    /* passed to `value_label` as its first argument */
 } cui_dot_chart_opts;
 
 typedef struct cui_dot_chart_result {
-    int hovered;               /* the sample under the pointer or the keyboard cursor, or -1 */
+    int hovered;               /* pointer or keyboard sample, middle on first keyboard activation, else -1 */
     double x;                  /* that sample's x, in x units */
     float value;               /* the stacked value there */
     bool clicked;              /* the plot was clicked, or Enter was pressed on it, this frame: `x` is where */
@@ -4171,6 +4871,8 @@ typedef struct cui_event_track_opts {
     bool no_add;               /* clicks and Enter do not add events */
     bool no_remove;            /* double-clicks and Delete do not remove events */
     bool no_axis;              /* hides the axis labels under the dots */
+    cui_axis_label_fn label;   /* writes the axis labels and the selected event's time in place of units and format; units still picks the spacing */
+    void *label_user;          /* passed to `label` as its first argument */
 } cui_event_track_opts;
 
 typedef struct cui_event_track_result {
@@ -4217,6 +4919,191 @@ typedef struct cui_dot_display_opts {
 CUI_API void cui_dot_display_ex(cui_ctx *ui, const char *text, const cui_dot_display_opts *opts);
 
 /* ------------------------------------------------------------------------ */
+/* Canvas and bars: format bar, live cursors, canvas controls, result card,  */
+/* selection bar                                                            */
+/* ------------------------------------------------------------------------ */
+
+/* Format bar: a floating bar that edits the format of a text selection. A
+ * color swatch opens a grid of colors; bold and underline toggle; link
+ * reports a click; the size readout follows the text style, chosen from a
+ * menu that shows each style at its own size; alignment and list open small
+ * flyouts (a corner mark says so); delete asks first, in a small tip with a
+ * Delete button. You pass one struct with the format and the bar edits it:
+ *
+ *     static cui_text_format f = { .style = 0, .size = 44 };
+ *     int r = cui_format_bar(ui, "fmt", &f);
+ *     if (r & CUI_FORMAT_CHANGED) apply(&f);
+ *     if (r & CUI_FORMAT_DELETE) delete_selection();
+ *
+ * It is a floating toolbar, so Tab moves through its items and what does not
+ * fit goes into the toolbar's "more" menu. */
+typedef enum cui_format_align {
+    CUI_FORMAT_ALIGN_LEFT = 0, CUI_FORMAT_ALIGN_CENTER, CUI_FORMAT_ALIGN_RIGHT, CUI_FORMAT_ALIGN_JUSTIFY
+} cui_format_align;
+typedef enum cui_format_list {
+    CUI_FORMAT_LIST_NONE = 0, CUI_FORMAT_LIST_BULLETS, CUI_FORMAT_LIST_NUMBERS, CUI_FORMAT_LIST_CHECKS
+} cui_format_list;
+typedef struct cui_text_format {
+    cui_tone color;            /* the text color, as a tone so it follows the theme; CUI_TONE_NEUTRAL is the text color */
+    bool bold, underline;
+    bool link;                 /* the selection is a link: the link button shows pressed */
+    int style;                 /* index into the styles (default: 0 Header, 1 Title, 2 Subtitle, 3 Normal text) */
+    float size;                /* the size readout, in your units; set from the style when the style changes */
+    cui_format_align align;
+    cui_format_list list;
+} cui_text_format;
+/* One text style of the style menu. */
+typedef struct cui_text_style {
+    const char *name;          /* "Header" */
+    float size;                /* the size it sets in your document, shown in the readout, e.g. 44 */
+    float preview_size;        /* the size of its name in the menu, in points */
+    cui_font font;             /* the font of its name in the menu */
+} cui_text_style;
+typedef struct cui_format_bar_opts {
+    int _;
+    const cui_text_style *styles;  /* `NULL`: Header, Title, Subtitle and Normal text */
+    int style_count;
+    const cui_tone *colors;        /* the color grid; `NULL`: eight tones, the text color first */
+    int color_count;
+    const char *footer;            /* a muted line under the styles, default "Text options"; "" leaves it out */
+    const char *footer_keys;       /* keycaps beside it, default "Ctrl Alt 0" ("" for none); a hint, the shortcut is yours */
+    const char *delete_question;   /* default "Delete this text?" */
+    bool no_delete;                /* leaves out the delete button */
+    bool no_more;                  /* leaves out the "..." button */
+} cui_format_bar_opts;
+enum {
+    CUI_FORMAT_CHANGED = 1,        /* a field of the format changed */
+    CUI_FORMAT_LINK = 2,           /* the link button was clicked */
+    CUI_FORMAT_DELETE = 4,         /* delete was confirmed */
+    CUI_FORMAT_MORE = 8            /* the "..." button was clicked */
+};
+/* Returns CUI_FORMAT_* flags. */
+CUI_API int cui_format_bar_ex(cui_ctx *ui, const char *id, cui_text_format *format, const cui_format_bar_opts *opts);
+
+/* Live cursors: other people's pointers over the previous component (a canvas,
+ * a document, a node editor), each an arrow in their color with a name flag
+ * and an optional chat bubble. You pass where each pointer is whenever it
+ * changes; the cursors glide there, at the same speed at any frame rate.
+ * Positions are points from the component's top-left corner, or canvas
+ * points under `view` (the node editor's pan and zoom). Cursors only draw:
+ * they take no input and no focus.
+ *
+ *     cui_node_editor_end(ui);
+ *     cui_live_cursors(ui, "cursors", people, 3, .view = &view); */
+typedef struct cui_live_user {
+    const char *name;          /* on the flag, and the identity that keeps a cursor gliding: keep it stable */
+    cui_color color;           /* the cursor, flag and avatar; unset: `tone` */
+    cui_tone tone;             /* the color as a tone of the theme when `color` is unset; 0: a tone chosen from the name */
+    float x, y;                /* where the pointer is */
+    const char *says;          /* a chat bubble under the flag; `NULL` for none */
+    bool speaking;             /* presence pill: a ring and moving level bars on this person */
+    bool away;                 /* the pointer is hidden (it left the canvas); still in the presence pill */
+    cui_texture avatar;        /* presence pill: a picture instead of the initials */
+} cui_live_user;
+typedef struct cui_live_cursors_opts {
+    int _;
+    const cui_node_view *view; /* positions are canvas points under this pan and zoom; `NULL`: points in the component */
+    bool no_glide;             /* jump to each new position */
+} cui_live_cursors_opts;
+CUI_API void cui_live_cursors_ex(cui_ctx *ui, const char *id, const cui_live_user *users, int count, const cui_live_cursors_opts *opts);
+/* Presence pill: who is here, as overlapping avatars in their colors. Whoever is
+ * speaking gets a ring, and the pill shows moving level bars and their name. */
+typedef struct cui_presence_pill_opts {
+    int _;
+    float size;                /* avatar size, default 26 */
+    int max_visible;           /* default 5; the rest become "+n" */
+} cui_presence_pill_opts;
+CUI_API void cui_presence_pill_ex(cui_ctx *ui, const char *id, const cui_live_user *users, int count, const cui_presence_pill_opts *opts);
+/* Selection ring: a ring in someone's color around the previous component, for
+ * "this item is selected by Kate", with an optional name flag on its corner. */
+typedef struct cui_selection_ring_opts {
+    int _;
+    const char *name;          /* a small flag at the top end corner; `NULL` for none */
+    float radius;              /* the ring's corner radius; 0 follows the component's corners */
+} cui_selection_ring_opts;
+CUI_API void cui_selection_ring_ex(cui_ctx *ui, cui_color color, const cui_selection_ring_opts *opts);
+
+/* Canvas controls: a floating rail of zoom controls over the previous component,
+ * at its end edge: zoom in, the zoom as a percentage (a click resets it to 100%),
+ * zoom out, fit, and toggles of your own (grid, layers). It drives a pan and
+ * zoom view, the same struct as the node editor's, so it works with a node
+ * editor as it is; zooming keeps the middle of the component in place and
+ * eases there. Zoom steps through presets (25% to 400% unless you pass your
+ * own). Tab moves through the buttons.
+ *
+ *     static cui_node_view view;
+ *     static bool grid = true;
+ *     cui_canvas_toggle t[] = { { CUI_ICON_GRID_3X3, "Grid", &grid } };
+ *     cui_node_editor_end(ui);
+ *     cui_canvas_controls(ui, "zoom", &view, .content = bounds, .toggles = t, .toggle_count = 1); */
+typedef struct cui_canvas_toggle {
+    const char *icon;
+    const char *label;         /* the tooltip */
+    bool *on;                  /* flipped on click, shown pressed while true */
+} cui_canvas_toggle;
+typedef struct cui_canvas_controls_opts {
+    int _;
+    const float *steps;        /* zoom presets, ascending; `NULL`: 0.25 0.33 0.5 0.67 0.8 1 1.25 1.5 2 3 4 */
+    int step_count;
+    cui_rect content;          /* the content's bounds in canvas points, for fit; empty: fit is only reported */
+    const cui_canvas_toggle *toggles;
+    int toggle_count;
+    bool no_fit;               /* leaves out the fit button */
+    bool start_side;           /* the rail sits at the start edge (left, or right in a right-to-left interface) */
+} cui_canvas_controls_opts;
+enum {
+    CUI_CANVAS_ZOOMED = 1,     /* the zoom changed (in, out, reset or fit) */
+    CUI_CANVAS_FIT = 2,        /* fit was clicked */
+    CUI_CANVAS_TOGGLED = 4     /* a toggle flipped */
+};
+/* Returns CUI_CANVAS_* flags. */
+CUI_API int cui_canvas_controls_ex(cui_ctx *ui, const char *id, cui_node_view *view, const cui_canvas_controls_opts *opts);
+
+/* Result card: a picture with rounded corners, an optional status chip in the
+ * top corner, and a title and caption on a soft fade at the bottom, for a
+ * render, an export or a generated image. Put its actions under it in a
+ * floating toolbar (cui_toolbar with CUI_TOOLBAR_FLOATING, cycle pickers for
+ * choices like 2x or PNG). The picture fills the card and is cropped to it.
+ * The card is focusable; a click, Enter or Space returns true (open it large). */
+typedef struct cui_result_card_opts {
+    int _;
+    const char *caption;       /* under the title, wraps */
+    const char *badge;         /* the status chip, e.g. "Done in 4.2 s"; `NULL` for none */
+    cui_tone badge_tone;       /* the chip's dot, default success */
+    int image_w, image_h;      /* the picture's size in pixels, to crop it without stretching; 0: stretched */
+    cui_size width;            /* default fill, up to 320 */
+    float aspect;              /* height over width, default 1.25 */
+} cui_result_card_opts;
+CUI_API bool cui_result_card_ex(cui_ctx *ui, const char *id, cui_texture image, const char *title, const cui_result_card_opts *opts);
+
+/* Selection bar: a floating bar that slides up under the previous component
+ * (a list, a table, a grid) while something in it is selected: "3 selected"
+ * with a clear button, then labeled actions. Esc clears the selection too.
+ * Give it the count, or your array of flags in `selected` and it counts and
+ * clears them itself.
+ *
+ *     static const cui_selection_action acts[] = { { CUI_ICON_MOVE, "Move" }, { CUI_ICON_TRASH_2, "Delete", CUI_TONE_DANGER } };
+ *     int a = cui_selection_bar(ui, "bulk", 0, acts, 2, .selected = picked, .item_count = n);
+ *     if (a == 1) delete_picked(); */
+typedef struct cui_selection_action {
+    const char *icon;
+    const char *label;
+    cui_tone tone;             /* CUI_TONE_DANGER for a destructive action */
+} cui_selection_action;
+typedef struct cui_selection_bar_opts {
+    int _;
+    bool *selected;            /* your flags, one per item: counted, and cleared by the clear button and Esc */
+    int item_count;            /* how many flags `selected` holds */
+    const char *count_format;  /* default "%d selected" */
+    cui_id anchor;             /* the component it sits under; 0: the previous component */
+    bool no_escape;            /* Esc does not clear */
+} cui_selection_bar_opts;
+enum { CUI_SELECTION_NONE = -1, CUI_SELECTION_CLEARED = -2 };
+/* Returns the action picked, CUI_SELECTION_CLEARED when the clear button or Esc
+ * cleared the selection, or CUI_SELECTION_NONE. */
+CUI_API int cui_selection_bar_ex(cui_ctx *ui, const char *id, int count, const cui_selection_action *actions, int action_count, const cui_selection_bar_opts *opts);
+
+/* ------------------------------------------------------------------------ */
 /* Custom drawing                                                           */
 /* ------------------------------------------------------------------------ */
 
@@ -4239,10 +5126,63 @@ CUI_API void cui_push_clip(cui_ctx *ui, cui_rect r);
 CUI_API void cui_pop_clip(cui_ctx *ui);
 
 /* Canvas: a box of the given size that you paint yourself. The callback
- * runs after layout, with the final rectangle. Returns interaction info. */
+ * runs after layout (during cui_end_frame), with the final rectangle; inside
+ * a disabled scope (cui_push_disabled) it sees cui_is_disabled return true.
+ * `user` is shallow-copied into frame memory (`user_size` bytes); any pointer
+ * fields inside `user` must stay valid until cui_end_frame; use
+ * cui_frame_alloc / cui_frame_strdup for temporary strings or slices.
+ * Returns interaction info. */
 typedef void (*cui_paint_fn)(cui_ctx *ui, cui_rect rect, void *user);
+/* `rect` is where the canvas was laid out in the previous frame, in window
+ * points (zero in its first frame), and `mouse` is the pointer relative to
+ * that rectangle's top-left corner. The paint callback gets this frame's final
+ * rectangle, which differs when the canvas moved or resized; for hits kept in
+ * window coordinates, use cui_mouse_pos. */
 typedef struct cui_canvas_result { cui_rect rect; bool hovered, pressed, clicked; cui_vec2 mouse; } cui_canvas_result;
 CUI_API cui_canvas_result cui_canvas(cui_ctx *ui, const char *id, cui_size width, cui_size height, cui_paint_fn paint, const void *user, size_t user_size);
+/* A zeroed options struct gives the same behavior as cui_canvas. */
+typedef struct cui_canvas_opts {
+    bool focusable;       /* Tab stop; with keyboard focus Enter or Space clicks it */
+    bool component_input; /* requires focusable; the host routes keys instead of button activation */
+} cui_canvas_opts;
+CUI_API cui_canvas_result cui_canvas_ex(cui_ctx *ui, const char *id, cui_size width, cui_size height, cui_paint_fn paint, const void *user, size_t user_size, const cui_canvas_opts *opts);
+/* Request focus for a submitted canvas with component_input enabled. The last
+ * request wins at end_frame and expires there. An absent, disabled, or
+ * nonparticipating target leaves the current focus unchanged. Removal revokes
+ * participating focus; built-in forward-focus behavior is unchanged. */
+CUI_API void cui_request_component_focus(cui_ctx *ui, cui_id id);
+/* Test eligibility from a completed submission: call after end_frame or before
+ * submitting components in the next frame. Includes window, modal and popup
+ * exclusion. Unsubmitted host visibility/disabled changes remain host-owned. */
+CUI_API bool cui_component_has_input(cui_ctx *ui, cui_id id);
+/* Current owner, including built-ins. Ownership alone does not imply eligibility. */
+CUI_API cui_id cui_focused_id(cui_ctx *ui);
+CUI_API bool cui_window_focused(cui_ctx *ui);
+
+/* Whether `id` has keyboard focus with its ring showing; for a painter. */
+CUI_API bool cui_focus_visible(cui_ctx *ui, cui_id id);
+
+/* Frame-scoped arena allocation: zero-initialized memory valid until the next
+ * cui_begin_frame. Useful for passing temporary strings or slices into a
+ * deferred cui_canvas paint callback without heap churn. Returns NULL for a
+ * null context, zero size, or a size the frame arena cannot represent. */
+CUI_API void *cui_frame_alloc(cui_ctx *ui, size_t size);
+CUI_API char *cui_frame_strdup(cui_ctx *ui, const char *s);
+
+/* Marks the part of a canvas that takes the wheel, for a canvas that zooms,
+ * pans or scrolls what it draws the way the built-in charts, graphs and
+ * timelines do. Call it from the paint callback; over the rectangle the wheel
+ * stops there instead of scrolling an enclosing scroll area or the page. Give
+ * it an id of its own, not the canvas's: the region keeps scroll state under
+ * that id. A canvas in a disabled scope marks nothing, so the wheel scrolls
+ * the page there. Like every hit area, the region is the one painted on the
+ * previous frame. */
+CUI_API void cui_wheel_region(cui_ctx *ui, cui_id id, cui_rect rect);
+/* Returns the wheel aimed at a cui_wheel_region id this frame, in lines with
+ * +y up as cui_input_scroll gives it, and consumes it, so call it once per
+ * frame. Returns false and leaves *delta alone when no wheel came, and in a
+ * disabled scope: call it in the scope the canvas was built in. */
+CUI_API bool cui_wheel_take(cui_ctx *ui, cui_id id, cui_vec2 *delta);
 
 /* Persistent per-id storage for your own components (zeroed on first use).
  * State not used for about 300 frames is freed (and zeroed again if it comes
@@ -4262,7 +5202,8 @@ CUI_API float cui_animate_spring(cui_ctx *ui, cui_id id, float target, float dur
 /* ------------------------------------------------------------------------ */
 
 /* Vertex shading modes. See docs/rendering.md for the reference shader. */
-enum { CUI_SHADE_TEXT = 0, CUI_SHADE_RRECT = 1, CUI_SHADE_SHADOW = 2, CUI_SHADE_IMAGE = 3, CUI_SHADE_SOLID = 4 };
+enum { CUI_SHADE_TEXT = 0, CUI_SHADE_RRECT = 1, CUI_SHADE_SHADOW = 2, CUI_SHADE_IMAGE = 3, CUI_SHADE_SOLID = 4,
+       CUI_SHADE_DITHER = 5   /* ordered dither: dots of border_color where border <= threshold(u, v) < color.a */ };
 
 typedef struct cui_vertex {
     float x, y;            /* position in pixels */
@@ -4320,6 +5261,7 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_split(ui, id, ratio, ...) CUI__SCOPE(cui_split_begin((ui), (id), (ratio), CUI__OPTS(cui_split_opts, __VA_ARGS__)), cui_split_end(ui))
 #define cui_id_scope(ui, str)   CUI__SCOPE(cui_push_id((ui), (str)), cui_pop_id(ui))
 #define cui_disabled_scope(ui, d) CUI__SCOPE(cui_push_disabled((ui), (d)), cui_pop_disabled(ui))
+#define cui_focus_scope(ui, id, active) CUI__SCOPE(cui_push_focus_scope((ui), (id), (active)), cui_pop_focus_scope(ui))
 
 #define cui_text(ui, text, ...)             cui_text_ex((ui), (text), CUI__OPTS(cui_text_opts, __VA_ARGS__))
 #define cui_button(ui, label, ...)          cui_button_ex((ui), (label), CUI__OPTS(cui_button_opts, __VA_ARGS__))
@@ -4344,6 +5286,7 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_tour(ui, id, steps, count, step, ...) cui_tour_ex((ui), (id), (steps), (count), (step), CUI__OPTS(cui_tour_opts, __VA_ARGS__))
 #define cui_menu(ui, label, ...)            CUI__SCOPE_IF(cui_menu_begin((ui), (label), CUI__OPTS(cui_menu_opts, __VA_ARGS__)), cui_menu_end(ui))
 #define cui_context_menu(ui, id)            CUI__SCOPE_IF(cui_context_menu_begin((ui), (id)), cui_context_menu_end(ui))
+#define cui_tree_table_menu(ui, id, node)  CUI__SCOPE_IF(cui_tree_table_menu_begin((ui), (id), (node)), cui_tree_table_menu_end(ui))
 #define cui_menu_item(ui, label, ...)       cui_menu_item_ex((ui), (label), CUI__OPTS(cui_menu_item_opts, __VA_ARGS__))
 #define cui_dialog(ui, title, open, ...)    CUI__SCOPE_IF(cui_dialog_begin((ui), (title), (open), CUI__OPTS(cui_dialog_opts, __VA_ARGS__)), cui_dialog_end(ui))
 #define cui_dialog_footer(ui)               CUI__SCOPE(cui_dialog_footer_begin(ui), cui_dialog_footer_end(ui))
@@ -4351,6 +5294,8 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_toast(ui, title, ...)           cui_toast_ex((ui), (title), CUI__OPTS(cui_toast_opts, __VA_ARGS__))
 #define cui_alert(ui, title, ...)           cui_alert_ex((ui), (title), CUI__OPTS(cui_alert_opts, __VA_ARGS__))
 #define cui_progress(ui, value, ...)        cui_progress_ex((ui), (value), CUI__OPTS(cui_progress_opts, __VA_ARGS__))
+#define cui_spinner(ui, size, ...)          cui_spinner_ex((ui), (size), CUI__OPTS(cui_spinner_opts, __VA_ARGS__))
+#define cui_skeleton_group(ui, ...)         CUI__SCOPE(cui_skeleton_group_begin_ex((ui), CUI__OPTS(cui_skeleton_group_opts, __VA_ARGS__)), cui_skeleton_group_end(ui))
 #define cui_badge(ui, text, ...)            cui_badge_ex((ui), (text), CUI__OPTS(cui_badge_opts, __VA_ARGS__))
 #define cui_avatar(ui, name, ...)           cui_avatar_ex((ui), (name), CUI__OPTS(cui_avatar_opts, __VA_ARGS__))
 #define cui_empty_state(ui, title, ...)     cui_empty_state_ex((ui), (title), CUI__OPTS(cui_empty_opts, __VA_ARGS__))
@@ -4363,6 +5308,7 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_line_chart(ui, id, s, n, ...)   cui_line_chart_ex((ui), (id), (s), (n), CUI__OPTS(cui_chart_opts, __VA_ARGS__))
 #define cui_bar_chart(ui, id, s, n, ...)    cui_bar_chart_ex((ui), (id), (s), (n), CUI__OPTS(cui_chart_opts, __VA_ARGS__))
 #define cui_donut_chart(ui, id, v, l, n, ...) cui_donut_chart_ex((ui), (id), (v), (l), (n), CUI__OPTS(cui_chart_opts, __VA_ARGS__))
+#define cui_pattern_meter(ui, id, parts, n, ...) cui_pattern_meter_ex((ui), (id), (parts), (n), CUI__OPTS(cui_pattern_meter_opts, __VA_ARGS__))
 #define cui_image(ui, tex, ...)             cui_image_ex((ui), (tex), CUI__OPTS(cui_image_opts, __VA_ARGS__))
 #define cui_radio_cards(ui, id, ch, n, idx, ...) cui_radio_cards_ex((ui), (id), (ch), (n), (idx), CUI__OPTS(cui_radio_cards_opts, __VA_ARGS__))
 #define cui_tag_input(ui, id, buf, cap, ...) cui_tag_input_ex((ui), (id), (buf), (cap), CUI__OPTS(cui_tag_opts, __VA_ARGS__))
@@ -4384,6 +5330,9 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_model_picker(ui, id, models, n, sel, ...) cui_model_picker_ex((ui), (id), (models), (n), (sel), CUI__OPTS(cui_model_picker_opts, __VA_ARGS__))
 #define cui_chat_composer(ui, id, buf, cap, ...) cui_chat_composer_ex((ui), (id), (buf), (cap), CUI__OPTS(cui_composer_opts, __VA_ARGS__))
 #define cui_voice_orb(ui, id, state, level, ...) cui_voice_orb_ex((ui), (id), (state), (level), CUI__OPTS(cui_voice_orb_opts, __VA_ARGS__))
+#define cui_voice_wave(ui, id, levels, n, ...) cui_voice_wave_ex((ui), (id), (levels), (n), CUI__OPTS(cui_voice_wave_opts, __VA_ARGS__))
+#define cui_voice_note(ui, id, note, ...)   cui_voice_note_ex((ui), (id), (note), CUI__OPTS(cui_voice_note_opts, __VA_ARGS__))
+#define cui_voice_session(ui, id, state, levels, n, ...) cui_voice_session_ex((ui), (id), (state), (levels), (n), CUI__OPTS(cui_voice_session_opts, __VA_ARGS__))
 #define cui_shimmer_text(ui, text, ...)    cui_shimmer_text_ex((ui), (text), CUI__OPTS(cui_text_fx_opts, __VA_ARGS__))
 #define cui_typewriter(ui, id, text, ...)   cui_typewriter_ex((ui), (id), (text), CUI__OPTS(cui_text_fx_opts, __VA_ARGS__))
 #define cui_text_reveal(ui, id, text, ...)  cui_text_reveal_ex((ui), (id), (text), CUI__OPTS(cui_text_fx_opts, __VA_ARGS__))
@@ -4429,6 +5378,7 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_banner(ui, text, open, ...)     cui_banner_ex((ui), (text), (open), CUI__OPTS(cui_banner_opts, __VA_ARGS__))
 #define cui_countdown(ui, id, seconds, ...) cui_countdown_ex((ui), (id), (seconds), CUI__OPTS(cui_countdown_opts, __VA_ARGS__))
 #define cui_checklist(ui, id, steps, count, ...) cui_checklist_ex((ui), (id), (steps), (count), CUI__OPTS(cui_checklist_opts, __VA_ARGS__))
+#define cui_veil(ui, id, revealed, ...)    CUI__SCOPE(cui_veil_begin_ex((ui), (id), (revealed), CUI__OPTS(cui_veil_opts, __VA_ARGS__)), cui_veil_end(ui))
 #define cui_multi_select(ui, id, items, count, selected, ...) cui_multi_select_ex((ui), (id), (items), (count), (selected), CUI__OPTS(cui_multi_select_opts, __VA_ARGS__))
 #define cui_date_range_picker(ui, id, range, ...) cui_date_range_picker_ex((ui), (id), (range), CUI__OPTS(cui_date_range_opts, __VA_ARGS__))
 #define cui_time_picker(ui, id, hour, minute, ...) cui_time_picker_ex((ui), (id), (hour), (minute), CUI__OPTS(cui_time_opts, __VA_ARGS__))
@@ -4455,6 +5405,10 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 #define cui_menu_bar_menu(ui, label, ...)   CUI__SCOPE_IF(cui_menu_bar_menu_begin((ui), (label), CUI__OPTS(cui_menu_bar_menu_opts, __VA_ARGS__)), cui_menu_bar_menu_end(ui))
 #define cui_toolbar(ui, id, ...)            CUI__SCOPE(cui_toolbar_begin((ui), (id), CUI__OPTS(cui_toolbar_opts, __VA_ARGS__)), cui_toolbar_end(ui))
 #define cui_toolbar_button(ui, icon, ...)   cui_toolbar_button_ex((ui), (icon), CUI__OPTS(cui_tool_opts, __VA_ARGS__))
+#define cui_toolbar_group(ui)               CUI__SCOPE(cui_toolbar_group_begin(ui), cui_toolbar_group_end(ui))
+#define cui_toolbar_radio(ui, id, icons, n, index, ...) cui_toolbar_radio_ex((ui), (id), (icons), (n), (index), CUI__OPTS(cui_toolbar_radio_opts, __VA_ARGS__))
+#define cui_toolbar_primary(ui, icon, ...)  cui_toolbar_primary_ex((ui), (icon), CUI__OPTS(cui_tool_opts, __VA_ARGS__))
+#define cui_toolbar_cycle(ui, id, items, n, index, ...) cui_toolbar_cycle_ex((ui), (id), (items), (n), (index), CUI__OPTS(cui_tool_opts, __VA_ARGS__))
 #define cui_status_bar(ui, id, ...)         CUI__SCOPE(cui_status_bar_begin((ui), (id), CUI__OPTS(cui_status_bar_opts, __VA_ARGS__)), cui_status_bar_end(ui))
 #define cui_status_bar_text(ui, text, ...)  cui_status_bar_text_ex((ui), (text), CUI__OPTS(cui_status_item_opts, __VA_ARGS__))
 #define cui_status_bar_item(ui, label, ...) cui_status_bar_item_ex((ui), (label), CUI__OPTS(cui_status_item_opts, __VA_ARGS__))
@@ -4510,6 +5464,23 @@ CUI_API const cui_draw_data *cui_get_draw_data(cui_ctx *ui);
 /* curve and gradient editors */
 #define cui_curve_editor(ui, id, keys, count, cap, ...) cui_curve_editor_ex((ui), (id), (keys), (count), (cap), CUI__OPTS(cui_curve_opts, __VA_ARGS__))
 #define cui_gradient_editor(ui, id, stops, count, cap, ...) cui_gradient_editor_ex((ui), (id), (stops), (count), (cap), CUI__OPTS(cui_gradient_opts, __VA_ARGS__))
+/* creative controls */
+#define cui_status_tag(ui, label, status, ...) cui_status_tag_ex((ui), (label), (status), CUI__OPTS(cui_status_tag_opts, __VA_ARGS__))
+#define cui_ratio_slider(ui, first, second, ratio, ...) cui_ratio_slider_ex((ui), (first), (second), (ratio), CUI__OPTS(cui_ratio_slider_opts, __VA_ARGS__))
+#define cui_gradient_slider(ui, label, v, lo, hi, ...) cui_gradient_slider_ex((ui), (label), (v), (lo), (hi), CUI__OPTS(cui_gradient_slider_opts, __VA_ARGS__))
+#define cui_step_slider(ui, label, v, lo, hi, ...) cui_step_slider_ex((ui), (label), (v), (lo), (hi), CUI__OPTS(cui_step_slider_opts, __VA_ARGS__))
+#define cui_palette_strip(ui, label, colors, locked, n, ...) cui_palette_strip_ex((ui), (label), (colors), (locked), (n), CUI__OPTS(cui_palette_strip_opts, __VA_ARGS__))
+#define cui_aspect_picker(ui, label, index, ...) cui_aspect_picker_ex((ui), (label), (index), CUI__OPTS(cui_aspect_picker_opts, __VA_ARGS__))
+#define cui_option_action(ui, label, items, n, index, icon, ...) cui_option_action_ex((ui), (label), (items), (n), (index), (icon), CUI__OPTS(cui_option_action_opts, __VA_ARGS__))
+#define cui_seed_field(ui, label, seed, locked, ...) cui_seed_field_ex((ui), (label), (seed), (locked), CUI__OPTS(cui_seed_field_opts, __VA_ARGS__))
+/* canvas and bars */
+#define cui_format_bar(ui, id, format, ...) cui_format_bar_ex((ui), (id), (format), CUI__OPTS(cui_format_bar_opts, __VA_ARGS__))
+#define cui_live_cursors(ui, id, users, n, ...) cui_live_cursors_ex((ui), (id), (users), (n), CUI__OPTS(cui_live_cursors_opts, __VA_ARGS__))
+#define cui_presence_pill(ui, id, users, n, ...) cui_presence_pill_ex((ui), (id), (users), (n), CUI__OPTS(cui_presence_pill_opts, __VA_ARGS__))
+#define cui_selection_ring(ui, color, ...)  cui_selection_ring_ex((ui), (color), CUI__OPTS(cui_selection_ring_opts, __VA_ARGS__))
+#define cui_canvas_controls(ui, id, view, ...) cui_canvas_controls_ex((ui), (id), (view), CUI__OPTS(cui_canvas_controls_opts, __VA_ARGS__))
+#define cui_result_card(ui, id, image, title, ...) cui_result_card_ex((ui), (id), (image), (title), CUI__OPTS(cui_result_card_opts, __VA_ARGS__))
+#define cui_selection_bar(ui, id, count, actions, n, ...) cui_selection_bar_ex((ui), (id), (count), (actions), (n), CUI__OPTS(cui_selection_bar_opts, __VA_ARGS__))
 #endif /* !__cplusplus */
 
 #ifdef __cplusplus

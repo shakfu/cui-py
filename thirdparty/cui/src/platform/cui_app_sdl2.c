@@ -9,6 +9,11 @@ typedef struct {
     SDL_Cursor *cursors[CUI_CURSOR_COUNT];
     cui_cursor cursor;
     SDL_Surface *surface;
+    /* SDL keeps no normal size and place for a maximized window: noted while it is normal */
+    int normal_x, normal_y, normal_w, normal_h;
+    bool normal_pos_known;
+    bool was_maximized;   /* the state before a minimize, which SDL's restore forgets on X11 */
+    double hold_place_until;   /* after a restore from minimized: keep the window at its normal place */
 } cui__sdl;
 
 static cui__sdl *cui__s(cui_app *app) { return app->plat; }
@@ -41,7 +46,46 @@ static bool cui__sdl_env_set(const char *name, const char *value) {
 }
 #endif
 
+/* IME candidate window: CUI calls this every frame a text field has focus, with
+ * the caret rectangle in window points, top-left origin, so the candidate list
+ * opens at the caret instead of at a stale position. */
+static void cui__sdl_text_input_rect(void *user, cui_rect caret) {
+    (void)user;
+    SDL_Rect r;
+    r.x = (int)(caret.x + 0.5f);
+    r.y = (int)(caret.y + 0.5f);
+    r.w = (int)(caret.w + 0.5f);
+    r.h = (int)(caret.h + 0.5f);
+    if (r.w < 1) r.w = 1;
+    if (r.h < 1) r.h = 1;
+    SDL_SetTextInputRect(&r);
+    if (!SDL_IsTextInputActive()) SDL_StartTextInput();
+}
+
+/* Wayland tells a window nothing about where it is and lets it choose nothing. */
+static bool cui__sdl_positions(void) {
+    const char *driver = SDL_GetCurrentVideoDriver();
+    return !driver || strcmp(driver, "wayland") != 0;
+}
+
+/* True when the top edge of a window at x, y of width w is on a display. */
+static bool cui__sdl_on_screen(int x, int y, int w) {
+    for (int i = 0; i < SDL_GetNumVideoDisplays(); i++) {
+        SDL_Rect r;
+        if (SDL_GetDisplayBounds(i, &r) == 0 && x < r.x + r.w && x + w > r.x && y >= r.y && y < r.y + r.h) return true;
+    }
+    return false;
+}
+
 bool cui__plat_init(cui_app *app) {
+#ifdef CUI_SDL_WAYLAND_ONLY
+    /* Request one driver, not SDL's automatic list. A conflicting environment
+     * hint is an initialization failure, not permission to use XWayland. */
+    if (!SDL_SetHint(SDL_HINT_VIDEODRIVER, "wayland")) {
+        const char *hint = SDL_GetHint(SDL_HINT_VIDEODRIVER);
+        if (!hint || strcmp(hint, "wayland") != 0) return false;
+    }
+#endif
     /* The app ID becomes WM_CLASS (X11) and the app_id (Wayland). SDL2 reads it
      * from these variables in SDL_Init, Wayland falling back to the X11 one;
      * SDL3 under sdl2-compat reads the SDL_APP_ID hint, which SDL_Quit clears.
@@ -53,12 +97,24 @@ bool cui__plat_init(cui_app *app) {
     bool set_x11 = cui__sdl_env_set("SDL_VIDEO_X11_WMCLASS", app->desc.app_id);
     bool set_wayland = cui__sdl_env_set("SDL_VIDEO_WAYLAND_WMCLASS", app->desc.app_id);
 #endif
+#ifdef SDL_HINT_IME_SHOW_UI   /* SDL 2.0.20 */
+    /* the OS draws the candidate list; SDL hides it unless this hint is set */
+    SDL_SetHint(SDL_HINT_IME_SHOW_UI, "1");
+#endif
     int init = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
 #if !defined(_WIN32)
     if (set_x11) unsetenv("SDL_VIDEO_X11_WMCLASS");
     if (set_wayland) unsetenv("SDL_VIDEO_WAYLAND_WMCLASS");
 #endif
     if (init != 0) return false;
+#ifdef CUI_SDL_WAYLAND_ONLY
+    /* An embedding application may already have initialized SDL video. */
+    const char *driver = SDL_GetCurrentVideoDriver();
+    if (!driver || strcmp(driver, "wayland") != 0) {
+        SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
+        return false;
+    }
+#endif
     cui__sdl *s = calloc(1, sizeof *s);
     if (!s) return false;
     app->plat = s;
@@ -73,16 +129,31 @@ bool cui__plat_init(cui_app *app) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     }
-    s->win = SDL_CreateWindow(app->title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, app->desc.width, app->desc.height, flags);
+    const cui_window_placement *pl = app->desc.placement;
+    int left = SDL_WINDOWPOS_CENTERED, top = SDL_WINDOWPOS_CENTERED;
+    if (pl && pl->has_position && cui__sdl_positions() && cui__sdl_on_screen(pl->x, pl->y, app->desc.width)) {
+        left = pl->x;
+        top = pl->y;
+        s->normal_x = left;
+        s->normal_y = top;
+        s->normal_pos_known = true;
+    }
+    s->normal_w = app->desc.width;
+    s->normal_h = app->desc.height;
+    s->win = SDL_CreateWindow(app->title, left, top, app->desc.width, app->desc.height, flags);
     if (!s->win && (flags & SDL_WINDOW_OPENGL)) {
         flags &= ~(Uint32)SDL_WINDOW_OPENGL;
-        s->win = SDL_CreateWindow(app->title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, app->desc.width, app->desc.height, flags);
+        s->win = SDL_CreateWindow(app->title, left, top, app->desc.width, app->desc.height, flags);
     }
     if (!s->win) { free(s); app->plat = NULL; return false; }
     SDL_SetWindowMinimumSize(s->win, app->desc.min_width, app->desc.min_height);
     SDL_SystemCursor ids[CUI_CURSOR_COUNT] = { SDL_SYSTEM_CURSOR_ARROW, SDL_SYSTEM_CURSOR_HAND, SDL_SYSTEM_CURSOR_IBEAM,
                                               SDL_SYSTEM_CURSOR_SIZEWE, SDL_SYSTEM_CURSOR_SIZENS, SDL_SYSTEM_CURSOR_SIZEALL, SDL_SYSTEM_CURSOR_NO };
     for (int i = 0; i < CUI_CURSOR_COUNT; i++) s->cursors[i] = SDL_CreateSystemCursor(ids[i]);
+    /* Text input stays on while the window is open, not only while a text field has
+     * focus: type-ahead in lists, trees and the file browser, the one-time code input,
+     * the hex editor and the shortcut recorder read typed characters without being a
+     * text field, and SDL delivers no SDL_TEXTINPUT while text input is off. */
     SDL_StartTextInput();
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
     cui_platform_iface pi;
@@ -91,11 +162,25 @@ bool cui__plat_init(cui_app *app) {
     pi.set_cursor = cui__sdl_set_cursor;
     pi.set_clipboard = cui__sdl_set_clip;
     pi.get_clipboard = cui__sdl_get_clip;
+    pi.set_text_input_rect = cui__sdl_text_input_rect;
     cui_set_platform(app->ui, &pi);
     return true;
 }
 
-void cui__plat_show(cui_app *app) { SDL_ShowWindow(cui__s(app)->win); }
+void cui__plat_show(cui_app *app) {
+    cui__sdl *s = cui__s(app);
+    SDL_ShowWindow(s->win);
+    /* X11: SDL learns the frame's size once the window is mapped, and only then places the
+     * content where it was asked to; a maximized window gets its normal place first */
+    const cui_window_placement *pl = app->desc.placement;
+    if (s->normal_pos_known) SDL_SetWindowPosition(s->win, s->normal_x, s->normal_y);
+    else if (cui__sdl_positions()) {
+        /* the place the system chose, before a maximize hides it until the window is restored */
+        SDL_GetWindowPosition(s->win, &s->normal_x, &s->normal_y);
+        s->normal_pos_known = true;
+    }
+    if (pl && pl->state == CUI_WINDOW_MAXIMIZED) SDL_MaximizeWindow(s->win);
+}
 
 void cui__plat_shutdown(cui_app *app) {
     cui__sdl *s = cui__s(app);
@@ -243,16 +328,73 @@ void cui__plat_wait(cui_app *app, double timeout) {
         if (ms < 0 ? SDL_WaitEvent(&e) : SDL_WaitEventTimeout(&e, ms)) cui__sdl_event(app, &e);
     }
     while (SDL_PollEvent(&e)) cui__sdl_event(app, &e);
+    /* after the whole batch, so a state change that came with a resize is already seen */
+    cui__sdl *s = cui__s(app);
+    Uint32 flags = SDL_GetWindowFlags(s->win);
+    if (!(flags & SDL_WINDOW_MINIMIZED)) s->was_maximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+    if (!(flags & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_MAXIMIZED | SDL_WINDOW_HIDDEN))) {
+        SDL_GetWindowSize(s->win, &s->normal_w, &s->normal_h);
+        if (s->hold_place_until > cui__plat_now()) {
+            /* SDL 3 on KWin X11 puts a window it restores from minimized a title bar lower */
+            int x, y;
+            SDL_GetWindowPosition(s->win, &x, &y);
+            if (x != s->normal_x || y != s->normal_y) SDL_SetWindowPosition(s->win, s->normal_x, s->normal_y);
+        } else if (cui__sdl_positions()) {
+            SDL_GetWindowPosition(s->win, &s->normal_x, &s->normal_y);
+            s->normal_pos_known = true;
+        }
+    }
 }
 
 bool cui__plat_present_part(cui_app *app, const void *bgra, int w, int h, int stride, int x, int y, int pw, int ph) {
     (void)app; (void)bgra; (void)w; (void)h; (void)stride; (void)x; (void)y; (void)pw; (void)ph;
     return false;   /* the whole buffer is shown each time */
 }
-
 double cui__plat_refresh_hz(cui_app *app) {
     SDL_DisplayMode m;
     return SDL_GetWindowDisplayMode(cui__s(app)->win, &m) == 0 ? m.refresh_rate : 0;
 }
 
 void cui__plat_gl_release(cui_app *app) { (void)app; }   /* not used: these keep OpenGL */
+
+void cui__plat_maximize(cui_app *app) {
+    cui__sdl *s = cui__s(app);
+    if (!s || !s->win) return;
+    SDL_MaximizeWindow(s->win);
+    s->was_maximized = true;   /* also for a minimize before the next frame confirms it */
+}
+
+void cui__plat_minimize(cui_app *app) { SDL_MinimizeWindow(cui__s(app)->win); }
+
+void cui__plat_restore(cui_app *app) {
+    cui__sdl *s = cui__s(app);
+    bool minimized = (SDL_GetWindowFlags(s->win) & SDL_WINDOW_MINIMIZED) != 0;
+    SDL_RestoreWindow(s->win);
+    if (!minimized) s->was_maximized = false;   /* normal now, also for a minimize before the next frame */
+    if (minimized && s->was_maximized) SDL_MaximizeWindow(s->win);
+    else if (minimized && s->normal_pos_known && cui__sdl_positions()) s->hold_place_until = cui__plat_now() + 0.5;
+}
+
+cui_window_state cui__plat_window_state(cui_app *app) {
+    Uint32 flags = SDL_GetWindowFlags(cui__s(app)->win);
+    return (flags & SDL_WINDOW_MINIMIZED) ? CUI_WINDOW_MINIMIZED : (flags & SDL_WINDOW_MAXIMIZED) ? CUI_WINDOW_MAXIMIZED : CUI_WINDOW_NORMAL;
+}
+
+void cui__plat_set_position(cui_app *app, int x, int y) {
+    cui__sdl *s = cui__s(app);
+    if (!cui__sdl_positions()) return;
+    s->hold_place_until = 0;   /* the new place replaces the one a restore holds */
+    SDL_SetWindowPosition(s->win, x, y);
+}
+
+void cui__plat_placement(cui_app *app, cui_window_placement *out) {
+    cui__sdl *s = cui__s(app);
+    out->x = s->normal_x;
+    out->y = s->normal_y;
+    out->width = s->normal_w;
+    out->height = s->normal_h;
+    out->has_position = s->normal_pos_known;
+    Uint32 flags = SDL_GetWindowFlags(s->win);
+    bool maximized = (flags & SDL_WINDOW_MAXIMIZED) || ((flags & SDL_WINDOW_MINIMIZED) && s->was_maximized);
+    out->state = maximized ? CUI_WINDOW_MAXIMIZED : CUI_WINDOW_NORMAL;
+}

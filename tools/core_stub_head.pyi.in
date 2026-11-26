@@ -2,7 +2,16 @@
 import datetime
 import os
 from collections.abc import Callable, Collection, Iterator, Sequence
-from typing import Any, NamedTuple, Self, TypeAlias
+from typing import Any, Generic, NamedTuple, Self, TypeAlias, TypeVar
+
+from typing_extensions import Buffer
+
+_T = TypeVar("_T")
+
+class Ref(Generic[_T]):
+    """A value a component reads and writes, for an option that takes a pointer."""
+    value: _T
+    def __init__(self, value: _T = ...) -> None: ...
 
 class Color(NamedTuple):
     r: int

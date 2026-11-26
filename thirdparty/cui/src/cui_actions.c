@@ -105,6 +105,7 @@ int cui_split_button_ex(cui_ctx *ui, const char *label, const char *const *items
 
 typedef struct { float t[32], hover[32]; bool init; } cui__tg_state;
 
+/** Move focus once per arrow press unless a later control took focus. */
 bool cui_toggle_group_ex(cui_ctx *ui, const char *id_str, const char *const *labels, int count, bool *values, const cui_toggle_group_opts *o) {
     cui_toggle_group_opts d;
     memset(&d, 0, sizeof d);
@@ -114,6 +115,7 @@ bool cui_toggle_group_ex(cui_ctx *ui, const char *id_str, const char *const *lab
     cui_id gid = cui_make_id(ui, id_str);
     cui__tg_state *st = cui_state(ui, gid, sizeof *st);
     bool changed = false;
+    cui_id move_from = 0, next_focus = 0;
     float h = cui__control_height(ui, o->size);
     float inner = h - 6;
     int row = cui__node_new(ui, gid);
@@ -137,7 +139,10 @@ bool cui_toggle_group_ex(cui_ctx *ui, const char *id_str, const char *const *lab
             int to = -1;
             if (cui_key_pressed(ui, CUI_KEY_RIGHT) && k < count - 1) to = k + 1;
             if (cui_key_pressed(ui, CUI_KEY_LEFT) && k > 0) to = k - 1;
-            if (to >= 0) ui->focus = cui__hash(&to, sizeof to, gid);
+            if (to >= 0) {
+                move_from = iid;
+                next_focus = cui__hash(&to, sizeof to, gid);
+            }
         }
         if (!st->init) st->t[k] = values[k] ? 1.0f : 0.0f;
         cui__tween(ui, &st->t[k], values[k] ? 1.0f : 0.0f, CUI__T_STATE);
@@ -164,6 +169,10 @@ bool cui_toggle_group_ex(cui_ctx *ui, const char *id_str, const char *const *lab
             ui->last_id = iid;
             cui_tooltip(ui, cui__frame_strdup(ui, labels[k], cui__display_len(labels[k])));
         }
+    }
+    if (next_focus && ui->focus == move_from) {
+        ui->focus = next_focus;
+        ui->animating = true;
     }
     st->init = true;
     cui__close(ui);
@@ -435,6 +444,7 @@ int cui_reactions(cui_ctx *ui, const char *id_str, cui_reaction *items, int coun
 typedef struct { bool open; cui_spring t, press; float hover; int z; } cui__dial_state;
 typedef struct { float hover[16]; } cui__dial_items;
 
+/** Balance the action scope even if an action closes the dial during the build. */
 int cui_speed_dial_ex(cui_ctx *ui, const char *id_str, const cui_speed_action *actions, int count, const cui_speed_dial_opts *o) {
     cui_speed_dial_opts d;
     memset(&d, 0, sizeof d);
@@ -484,7 +494,8 @@ int cui_speed_dial_ex(cui_ctx *ui, const char *id_str, const cui_speed_action *a
         cui_node *rn = &ui->nodes[root];
         rn->gap = 10; rn->align = CUI_ALIGN_END;
         rn->pad[1] = (size - 42) * 0.5f;
-        if (!st->open) cui_push_disabled(ui, true);
+        bool closing = !st->open;
+        if (closing) cui_push_disabled(ui, true);
         for (int j = 0; j < count; j++) {
             int k = below ? j : count - 1 - j;          /* k counts outward from the button */
             int dist = below ? j : count - 1 - j;
@@ -529,7 +540,7 @@ int cui_speed_dial_ex(cui_ctx *ui, const char *id_str, const cui_speed_action *a
             cui__close(ui);
             cui__focus_ring(ui, rb, ar.focus_visible ? 1.0f : 0.0f);
         }
-        if (!st->open) cui_pop_disabled(ui);
+        if (closing) cui_pop_disabled(ui);
         cui__float_end(ui);
     }
     ui->last_id = id;
@@ -921,6 +932,7 @@ static void cui__paint_scrub(cui_ctx *ui, cui_node *n, void *data) {
     }
 }
 
+/** Edit a bounded scrub value and accept only a complete, finite numeric draft. */
 bool cui_scrub_ex(cui_ctx *ui, const char *label, float *value, float min, float max, const cui_scrub_opts *o) {
     cui_scrub_opts d;
     memset(&d, 0, sizeof d);
@@ -1019,7 +1031,7 @@ bool cui_scrub_ex(cui_ctx *ui, const char *label, float *value, float min, float
     if (!cancel && ((f & CUI_SUBMITTED) || ui->focus != fid)) {
         char *end = NULL;
         double v = strtod(st->text, &end);
-        if (end != st->text) *value = cui__clampf((float)v, min, max);
+        if (end != st->text && *end == 0 && isfinite(v)) *value = (float)CUI_CLAMP(v, (double)min, (double)max);
         st->editing = false;
         if (f & CUI_SUBMITTED) ui->focus = id;
     }
@@ -1033,12 +1045,17 @@ bool cui_scrub_ex(cui_ctx *ui, const char *label, float *value, float min, float
 
 typedef struct { char text[64]; bool had_focus; double last; bool init; } cui__money_state;
 
-static void cui__format_money(char *out, size_t cap, double v, int decimals) {
+/** Format a grouped amount only when its complete representation fits. */
+static bool cui__format_money(char *out, size_t cap, double v, int decimals) {
     char raw[64];
+    if (!isfinite(v) || decimals >= (int)sizeof raw) return false;
     bool neg = v < 0;
-    snprintf(raw, sizeof raw, "%.*f", decimals, neg ? -v : v);
+    int length = snprintf(raw, sizeof raw, "%.*f", decimals, neg ? -v : v);
+    if (length < 1 || length >= (int)sizeof raw) return false;
     char *dot = strchr(raw, '.');
     int int_len = dot ? (int)(dot - raw) : (int)strlen(raw);
+    size_t grouped = (size_t)(length + (int_len - 1) / 3 + neg);
+    if (grouped >= cap) return false;
     size_t o = 0;
     if (neg && o + 1 < cap) out[o++] = '-';
     for (int i = 0; i < int_len && o + 1 < cap; i++) {
@@ -1048,13 +1065,16 @@ static void cui__format_money(char *out, size_t cap, double v, int decimals) {
     }
     if (dot) for (const char *p = dot; *p && o + 1 < cap; p++) out[o++] = *p;
     out[o] = 0;
+    return true;
 }
 
+/** Edit an amount only if its grouped display can represent the result. */
 bool cui_money_input_ex(cui_ctx *ui, const char *id_str, double *value, const cui_money_opts *o) {
     cui_money_opts d;
     memset(&d, 0, sizeof d);
     if (!o) o = &d;
     int dec = o->decimals > 0 ? o->decimals : (o->decimals < 0 ? 0 : 2);
+    dec = CUI_MIN(dec, 61);
     cui_id id = cui_make_id(ui, id_str);
     cui__money_state *st = cui_state(ui, id ^ 0x3077u, sizeof *st);
     double old = *value;
@@ -1067,10 +1087,15 @@ bool cui_money_input_ex(cui_ctx *ui, const char *id_str, double *value, const cu
         if (st->had_focus) {
             char *end = NULL;
             double v = strtod(st->text, &end);
-            if (end != st->text) { double m = pow(10, dec); *value = round(v * m) / m; }
+            char display[sizeof st->text];
+            if (end != st->text && *end == 0 && cui__format_money(display, sizeof display, v, dec)) {
+                double m = pow(10, dec);
+                *value = round(v * m) / m;
+            }
             else if (!st->text[0]) *value = 0;
         }
-        cui__format_money(st->text, sizeof st->text, *value, dec);
+        if (!cui__format_money(st->text, sizeof st->text, *value, dec))
+            snprintf(st->text, sizeof st->text, "%g", *value);
         st->init = true;
     }
     cui_input_opts io;
@@ -1094,7 +1119,11 @@ bool cui_money_input_ex(cui_ctx *ui, const char *id_str, double *value, const cu
         if (strcmp(clean, st->text) != 0) snprintf(st->text, sizeof st->text, "%s", clean);
         char *end = NULL;
         double v = strtod(st->text, &end);
-        *value = end != st->text ? v : 0;
+        char display[sizeof st->text];
+        if (end != st->text && *end == 0) {
+            if (cui__format_money(display, sizeof display, v, dec)) *value = v;
+            else snprintf(st->text, sizeof st->text, "%.*f", dec, old);
+        } else if (!st->text[0]) *value = 0;
     }
     st->had_focus = ui->focus == id;
     st->last = *value;

@@ -8,7 +8,7 @@ import cui
 
 
 def test_version() -> None:
-    assert cui.CUI_VERSION == "1.4.0"
+    assert cui.CUI_VERSION == "1.5.0"
     assert cui.__version__
 
 
@@ -73,3 +73,10 @@ def test_pure_functions() -> None:
     assert cui.alpha(cui.rgb(0x123456), 0.5).a == 128
     assert cui.http_reason(404) == "Not Found"
     assert cui.key_name(cui.KEY_ENTER)
+
+
+def test_app_placement_is_checked_before_the_window_opens() -> None:
+    with pytest.raises(ValueError, match="window state"):
+        cui.App(hidden=True, placement=cui.WindowPlacement(0, 0, 100, 100, 7, True))
+    with pytest.raises(ValueError):
+        cui.App(hidden=True, placement=(0, 0, 100, 100))  # type: ignore[arg-type]  # too few fields

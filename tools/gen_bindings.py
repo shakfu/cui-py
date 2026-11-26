@@ -75,6 +75,93 @@ INOUT_ARRAYS = {
     ("cui_filter_bar", "selected"): "count",  # selected[i] is the mask of fields[i]
 }
 
+# Option fields that point at one value the component reads and writes: a `cui.Ref`.
+# Listed by hand: a pointer to an array taken for one value would be written past.
+OPT_REFS = {
+    ("cui_chat_composer_ex", "removed"),
+    ("cui_chat_composer_ex", "model"),
+    ("cui_comment_ex", "likes"),
+    ("cui_comment_ex", "liked"),
+    ("cui_curve_editor_ex", "selected"),
+    ("cui_data_grid_begin_ex", "sort"),
+    ("cui_data_grid_begin_ex", "cursor"),
+    ("cui_data_grid_begin_ex", "anchor"),
+    ("cui_diff_view_ex", "current"),
+    ("cui_emoji_picker_ex", "tone"),
+    ("cui_event_track_ex", "selected"),
+    ("cui_gradient_editor_ex", "selected"),
+    ("cui_gradient_slider_ex", "color_out"),
+    ("cui_graph_view_ex", "selected"),
+    ("cui_keymap_ex", "mods"),
+    ("cui_month_calendar_ex", "selected"),
+    ("cui_pipeline_ex", "selected"),
+    ("cui_regex_tester_ex", "flags"),
+    ("cui_response_actions_ex", "vote"),
+    ("cui_table_begin_ex", "sort"),
+    ("cui_toolbar_button_ex", "toggle"),
+    ("cui_toolbar_cycle_ex", "toggle"),
+    ("cui_toolbar_primary_ex", "toggle"),
+    ("cui_tree_table_begin_ex", "sort"),
+    ("cui_tree_table_begin_ex", "cursor"),
+    ("cui_treemap_ex", "selected"),
+    ("cui_voice_session_ex", "muted"),
+    ("cui_voice_wave_ex", "progress"),
+}
+
+# Option arrays and where their length comes from:
+#   "=f"     the opts count field f, set from len()
+#   "len:e"  must equal e, an expression over the function's parameters
+#   int      a fixed length
+# Arrays in OPT_REF_ARRAYS are written back too, through a `cui.Ref` holding a list.
+OPT_ARRAYS = {
+    ("cui_aspect_picker_ex", "ratios"): "=count",
+    ("cui_bar_chart_ex", "labels"): "=label_count",
+    ("cui_bar_chart_ex", "annotations"): "=annotation_count",
+    ("cui_candlestick_ex", "labels"): "len:count",
+    ("cui_candlestick_ex", "overlays"): "=overlay_count",
+    ("cui_canvas_controls_ex", "steps"): "=step_count",
+    ("cui_chat_composer_ex", "attachments"): "=attachment_count",
+    ("cui_chat_composer_ex", "models"): "=model_count",
+    ("cui_chat_composer_ex", "levels"): "=level_count",
+    ("cui_code_editor_ex", "marks"): "=mark_count",
+    ("cui_context_meter_ex", "parts"): "=part_count",
+    ("cui_donut_chart_ex", "labels"): "=label_count",
+    ("cui_donut_chart_ex", "annotations"): "=annotation_count",
+    ("cui_emoji_picker_ex", "group_names"): 10,
+    ("cui_fader_ex", "ticks"): "=tick_count",
+    ("cui_fader_ex", "meter"): "=meter_channels",
+    ("cui_file_browser_ex", "places"): "=place_count",
+    ("cui_format_bar_ex", "styles"): "=style_count",
+    ("cui_format_bar_ex", "colors"): "=color_count",
+    ("cui_gradient_slider_ex", "stops"): "=stop_count",
+    ("cui_keymap_ex", "categories"): "=category_count",
+    ("cui_line_chart_ex", "labels"): "=label_count",
+    ("cui_line_chart_ex", "annotations"): "=annotation_count",
+    ("cui_metric_ex", "spark"): "=spark_count",
+    ("cui_month_calendar_ex", "month_names"): 12,
+    ("cui_month_calendar_ex", "day_names"): 7,
+    ("cui_multi_select_ex", "icons"): "len:count",
+    ("cui_radial_gauge_ex", "bands"): "=band_count",
+    ("cui_sankey_ex", "node_colors"): "len:node_count",
+    ("cui_segmented_ex", "icons"): "len:count",
+    ("cui_select_ex", "icons"): "len:count",
+    ("cui_split_button_ex", "item_icons"): "len:count",
+    ("cui_step_slider_ex", "labels"): "len:max - min + 1",
+    ("cui_tabs_ex", "icons"): "len:count",
+    ("cui_toggle_group_ex", "icons"): "len:count",
+    ("cui_toolbar_radio_ex", "labels"): "len:count",
+    ("cui_trace_view_ex", "markers"): "=marker_count",
+    ("cui_trace_view_ex", "links"): "=link_count",
+    ("cui_voice_session_ex", "owners"): "len:count",
+    ("cui_voice_wave_ex", "owners"): "len:count",
+}
+# Option fields that point at one value C only reads.
+OPT_VALPTRS = {("cui_live_cursors_ex", "view")}
+OPT_REF_ARRAYS = {
+    ("cui_data_grid_begin_ex", "selected"): "len:row_count",
+    ("cui_selection_bar_ex", "selected"): "=item_count",
+}
+
 # Scalar pointers followed by a count that are still one value.
 SCALAR_PTRS = {("cui_pagination", "page")}
 # Caller-owned buffers wrapped by a hand-written class in _core.pyx.
@@ -89,7 +176,13 @@ MANUAL = {
     "cui_end_frame",
     "cui_get_draw_data",
     "cui_canvas",
+    "cui_canvas_ex",
+    "cui_set_input_hook",
+    "cui_dispatch_input",
     "cui_image_create",
+    "cui_image_load",
+    "cui_image_destroy",
+    "cui_image_update",
     "cui_font_load_memory",
     "cui_emoji_font_load_memory",
     "cui_app_create",
@@ -101,6 +194,13 @@ MANUAL = {
     "cui_app_set_title",
     "cui_app_set_size",
     "cui_app_size",
+    "cui_app_maximize",
+    "cui_app_minimize",
+    "cui_app_restore",
+    "cui_app_window_state",
+    "cui_app_set_position",
+    "cui_app_placement",
+    "cui_app_follow_system_theme",
     "cui_app_is_software",
     "cui_app_backend",
     "cui_app_file_dialog",
@@ -136,6 +236,9 @@ EXCLUDED = {
     "cui_gl_is_software": "OpenGL integration needs a GL loader from the host",
     "cui_state": "raw per-id memory for C components",
     "cui_state_on_free": "raw per-id memory for C components",
+    "cui_spinner": "`spinner` wraps `cui_spinner_ex`, which takes the same size",
+    "cui_frame_alloc": "for C paint data; a Python paint callback keeps its own objects",
+    "cui_frame_strdup": "for C paint data; a Python paint callback keeps its own objects",
 }
 
 # Context methods that need no open frame.
@@ -166,6 +269,14 @@ ANYTIME = {
     "cui_popover_open",
     "cui_popover_close",
     "cui_popover_toggle",
+    # input queries an input route reads
+    "cui_component_has_input",
+    "cui_key_action_down",
+    "cui_key_down",
+    "cui_key_pressed",
+    "cui_key_mods",
+    "cui_focused_id",
+    "cui_window_focused",
 }
 # Only valid inside a canvas paint callback.
 PAINT_PREFIXES = ("cui_draw_", "cui_push_clip", "cui_pop_clip")
@@ -550,6 +661,7 @@ class Types:
         self.need_fill: set[str] = set()  # _fill_X / _to_X
         self.need_from: set[str] = set()  # _from_X
         self.need_arr: set[str] = set()  # _arr_X / _list_X
+        self.need_ref: dict[str, tuple[str, ci.Type]] = {}  # _refget_X / _refset_X
 
     def fields(self, name: str | None, strict: bool) -> list[F] | None:
         """Fields of a struct. Strict: every field converts from Python, or None.
@@ -681,6 +793,36 @@ class Types:
             self.frm(name)
         return f"_arr_{name}"
 
+    def ref_tag(self, t: ci.Type) -> str:
+        """The name of the Ref cell helpers for C type `t`; records that they are needed."""
+        base = cy(t).replace("const ", "")
+        r = record_name(t)
+        if r:
+            self.to(r)
+            self.frm(r)
+        tag = base.replace(" ", "_")
+        self.need_ref[tag] = (base, t)
+        return tag
+
+    def ref_code(self) -> list[str]:
+        code = []
+        for tag, (base, t) in sorted(self.need_ref.items()):
+            r = record_name(t)
+            cell = f"(<const {base} *>p)[i]"
+            if r:
+                get, put = f"_from_{r}({cell})", f"_to_{r}(v)"
+            else:
+                get = f"bool({cell})" if py_scalar(t) == "bool" else cell
+                put = f"<{base}>{cast_in(t, 'v')}"
+            code.append(
+                f"cdef object _refget_{tag}(const void *p, Py_ssize_t i):\n"
+                f"    return {get}\n\n"
+                f"cdef int _refset_{tag}(void *p, Py_ssize_t i, object v) except -1:\n"
+                f"    (<{base} *>p)[i] = {put}\n"
+                f"    return 0\n"
+            )
+        return code
+
     def pytype_in(self, t: ci.Type) -> str:
         if is_scalar(t):
             return py_scalar(t)
@@ -717,9 +859,9 @@ class P:
     )  # count params: the arrays sharing it
     elem: str = ""  # inout_array: element C type
     rec: str | None = None  # struct name
-    opts: list[tuple[str, str, str]] = field(
+    opts: list[tuple[str, str, str, object]] = field(
         default_factory=list
-    )  # (cfield, pyname, kind)
+    )  # (cfield, pyname, kind, extra)
     of: str | None = None  # strlen params: the string they measure
 
     @property
@@ -733,27 +875,94 @@ class P:
 
 ARRAY_KINDS = ("strlist", "floatlist", "inout_array", "recarray", "recarray_inout")
 
+# _ScalarArray codes, and the Ref cell types, by canonical C type.
+ARRAY_CODES = {
+    TK.BOOL: "?",
+    TK.INT: "i",
+    TK.UINT: "I",
+    TK.FLOAT: "f",
+    TK.DOUBLE: "d",
+    TK.UCHAR: "B",
+    TK.ENUM: "i",
+}
+
 
 class Planner:
     def __init__(self, types: Types) -> None:
         self.ty = types
+        self.used: set[tuple[str, str]] = set()  # OPT_* entries applied
 
-    def opts_fields(self, rec: str) -> tuple[list[tuple[str, str, str]], list[str]]:
-        out, skipped = [], []
-        for f in self.ty.m.structs[rec].fields:
+    def elem(self, t: ci.Type) -> str | None:
+        """How the elements of the array `t` points at convert: "str", "float", a
+        scalar code for _ScalarArray, or "rec:<struct>"; None when they do not."""
+        if is_strlist(t):
+            return "str"
+        p = t.get_pointee()
+        k = p.get_canonical().kind
+        if k == TK.FLOAT:
+            return "float"
+        if k in ARRAY_CODES:
+            return ARRAY_CODES[k]
+        r = record_name(p)
+        return f"rec:{r}" if self.ty.is_record(r) else None
+
+    def opts_fields(
+        self, fname: str, rec: str, method: bool
+    ) -> tuple[list[tuple[str, str, str, object]], list[str]]:
+        """(cfield, pyname, kind, extra) of each opts field Python sets, and those it skips."""
+        out: list[tuple[str, str, str, object]] = []
+        skipped: list[str] = []
+        fields = self.ty.m.structs[rec].fields
+        counts = {
+            spec[1:]
+            for key, spec in (OPT_ARRAYS | OPT_REF_ARRAYS).items()
+            if key[0] == fname and isinstance(spec, str) and spec.startswith("=")
+        }
+        for f in fields:
             n, t = f.spelling, f.type
-            if n == "_":
+            key = (fname, n)
+            if n == "_" or n in counts:
                 continue
+            if (
+                key in OPT_REFS
+                or key in OPT_ARRAYS
+                or key in OPT_REF_ARRAYS
+                or key in OPT_VALPTRS
+            ):
+                self.used.add(key)
+            pointee = t.get_pointee() if t.kind == TK.POINTER else None
             if t.kind == TK.CONSTANTARRAY:
                 skipped.append(n)
+            elif t.get_canonical().kind in (TK.CHAR_S, TK.CHAR_U):
+                out.append((n, pyname(n), "char", None))
             elif is_scalar(t):
-                out.append((n, pyname(n), "scalar"))
+                out.append((n, pyname(n), "scalar", None))
             elif is_char_ptr(t, True):
-                out.append((n, pyname(n), "str"))
+                out.append((n, pyname(n), "str", None))
             elif self.ty.is_value(record_name(t)):
-                out.append((n, pyname(n), "value"))
+                out.append((n, pyname(n), "value", None))
+            elif key in OPT_REFS and method and pointee is not None:
+                if not (is_scalar(pointee) or self.ty.is_value(record_name(pointee))):
+                    raise Unsupported(f"{rec}.{n} is not a scalar or value")
+                out.append((n, pyname(n), "ref", None))
+            elif key in OPT_REF_ARRAYS and method and pointee is not None:
+                if pointee.get_canonical().kind not in ARRAY_CODES:
+                    raise Unsupported(f"{rec}.{n} is not a scalar array")
+                out.append((n, pyname(n), "refarr", OPT_REF_ARRAYS[key]))
+            elif key in OPT_ARRAYS and self.elem(t):
+                out.append((n, pyname(n), "arr", OPT_ARRAYS[key]))
+            elif (
+                key in OPT_VALPTRS
+                and pointee is not None
+                and self.ty.is_value(record_name(pointee))
+            ):
+                out.append((n, pyname(n), "valptr", None))
             else:
                 skipped.append(n)
+        names = {f.spelling for f in fields}
+        for c in counts:
+            if c not in names:
+                raise Unsupported(f"{rec} has no count field {c}")
         return out, skipped
 
     def plan(self, fn: ci.Cursor) -> tuple[list[P], list[str]]:
@@ -796,7 +1005,9 @@ class Planner:
             pointee = t.get_pointee() if t.kind == TK.POINTER else None
             rec_p = record_name(pointee) if pointee else None
             if pointee and n == "opts" and pointee.is_const_qualified() and rec_p:
-                fields, sk = self.opts_fields(rec_p)
+                fields, sk = self.opts_fields(
+                    fname, rec_p, cy(args[0].type) == "cui_ctx *"
+                )
                 skipped_opts += sk
                 plans[i] = P("opts", n, rec_p, rec=rec_p, opts=fields)
                 continue
@@ -989,6 +1200,8 @@ class Gen:
     def guard(fname: str) -> str:
         if fname.startswith(PAINT_PREFIXES):
             return "self._need_paint()"
+        if fname.startswith("cui_input_") and fname != "cui_input_repeated":
+            return "self._need_input()"
         if fname in ANYTIME or fname.startswith(ANYTIME_PREFIXES):
             return "self._need_alive()"
         return "self._need_frame()"
@@ -1031,22 +1244,43 @@ class Gen:
             elif p.kind == "opts":
                 taken = {q.py for q in plans}
                 fixed = []
-                for cf, pf, k in p.opts:
+                for cf, pf, k, x in p.opts:
                     if pf in taken:
                         pf = pf + "_"
-                    fixed.append((cf, pf, k))
-                    ft = self.ftype(p.rec, cf)
-                    ann = (
-                        "str"
-                        if k == "str"
-                        else (self.ty.pytype_in(ft) if k == "value" else py_scalar(ft))
-                    )
+                    fixed.append((cf, pf, k, x))
+                    ann = self.opt_ann(p.rec, cf, k)
                     kw.append(f"{pf}=None")
                     skw.append(f"{pf}: {ann} | None = None")
                 p.opts = fixed
         parts = pos + (["*"] + kw if kw else [])
         sparts = spos + (["*"] + skw if skw else [])
         return parts, sparts
+
+    def opt_ann(self, rec: str, cf: str, k: str) -> str:
+        """The stub type of an opts keyword."""
+        ft = self.ftype(rec, cf)
+        if k in ("str", "char"):
+            return "str"
+        if k == "value":
+            return self.ty.pytype_in(ft)
+        if k == "scalar":
+            return py_scalar(ft)
+        pt = ft.get_pointee()
+        if k == "ref":
+            inner = py_scalar(pt) if is_scalar(pt) else self.ty.pytype_out(pt)
+            return f"Ref[{inner}]"
+        if k == "refarr":
+            return f"Ref[list[{py_scalar(pt)}]]"
+        if k == "valptr":
+            return self.ty.pytype_in(pt)
+        e = self.pl.elem(ft)
+        if e == "str":
+            return "Sequence[str]"
+        if e == "float" or e in ("f", "d"):
+            return "Sequence[float]"
+        if e and e.startswith("rec:"):
+            return f"Sequence[{self.ty.pytype_in(pt)}]"
+        return f"Sequence[{py_scalar(pt)}]"
 
     def decls(self, plans: list[P]) -> list[tuple[str, str]]:
         """(C type, storage name) for every parameter that needs storage."""
@@ -1128,13 +1362,22 @@ class Gen:
                 out.append(f"{v} = <int>len({pyname(p.of)})")
             elif p.kind == "opts":
                 out.append(f"memset(&{v}, 0, sizeof({v}))")
-                for cf, pf, k in p.opts:
+                for cf, pf, k, x in p.opts:
                     ft = self.ftype(p.rec, cf)
                     cfa = pyname(cf) if keyword.iskeyword(cf) else cf
+                    if k in ("arr", "refarr"):
+                        continue  # after the counts, which their lengths may read
                     if k == "str":
                         conv = f"_cstr({keep}, {pf})"
+                    elif k == "char":
+                        conv = f"_ascii_char({pf})"
                     elif k == "value":
                         conv = f"{self.ty.to(record_name(ft))}({pf})"
+                    elif k == "ref":
+                        conv = self.ref_bind(ft.get_pointee(), pf, "-1", keep)
+                    elif k == "valptr":
+                        r = record_name(ft.get_pointee())
+                        conv = f"<{cy(ft)}>_mem_ptr({self.ty.arr(r, False)}(({pf},), {keep}))"
                     else:
                         conv = f"<{cy(ft)}>{cast_in(ft, pf)}"
                     out.append(f"if {pf} is not None: {v}.{cfa} = {conv}")
@@ -1148,6 +1391,75 @@ class Gen:
                         f"if {T}{q.v}.n != {first}.n: raise ValueError("
                         f'"{q.name} and {arrs[0].name} must have the same length")'
                     )
+        for p in plans:
+            if p.kind == "opts":
+                out += self.opt_arrays(plans, p, T, keep)
+        return out
+
+    def ref_bind(self, ct: ci.Type, pf: str, n: str, keep: str) -> str:
+        """An expression binding the Ref `pf` to a cell of `n` (-1: one) values of type `ct`."""
+        tag = self.ty.ref_tag(ct)
+        base = cy(ct).replace("const ", "")
+        return (
+            f'<{base} *>_ref_bind({pf}, {keep}, self, "{tag}", sizeof({base}), '
+            f"_refget_{tag}, _refset_{tag}, {n})"
+        )
+
+    def opt_arrays(self, plans: list[P], p: P, T: str, keep: str) -> list[str]:
+        """Lines that set the opts array fields, checking or setting their lengths."""
+        out = []
+        params = {q.name: T + q.v for q in plans}
+        v = T + p.v
+        for cf, pf, k, spec in p.opts:
+            if k not in ("arr", "refarr"):
+                continue
+            ft = self.ftype(p.rec, cf)
+            pt = ft.get_pointee()
+            cfa = pyname(cf) if keyword.iskeyword(cf) else cf
+            if isinstance(spec, int):
+                need: str | None = str(spec)
+            elif spec.startswith("len:"):
+                # 64-bit, so `max - min + 1` cannot wrap
+                need = re.sub(
+                    r"[A-Za-z_]\w*",
+                    lambda mm: (
+                        f"(<long long>{params[mm.group(0)]})"
+                        if mm.group(0) in params
+                        else mm.group(0)
+                    ),
+                    spec[4:],
+                )
+            else:
+                need = None
+            body = []
+            if k == "refarr":
+                n = need or f"len({pf}.value)"
+                body.append(f"{v}.{cfa} = {self.ref_bind(pt, pf, n, keep)}")
+                if need is None:
+                    body.append(f"{v}.{spec[1:]} = <int>{n}")
+            else:
+                e = self.pl.elem(ft)
+                if e == "str":
+                    mk, cls = f"_StrArray({pf})", "_StrArray"
+                elif e == "float":
+                    mk, cls = f"_FloatArray({pf})", "_FloatArray"
+                elif e.startswith("rec:"):
+                    mk, cls = f"{self.ty.arr(e[4:], False)}({pf}, {keep})", "_Mem"
+                else:
+                    mk, cls = f'_ScalarArray({pf}, "{e}")', "_ScalarArray"
+                body.append(f"_a = {mk}")
+                if not e.startswith("rec:"):
+                    body.append(f"{keep}.append(_a)")
+                if need is not None:
+                    body.append(
+                        f"if _a.n != {need}: raise ValueError("
+                        f'f"{pf} needs {{{need}}} items, got {{_a.n}}")'
+                    )
+                if need is None:
+                    body.append(f"{v}.{spec[1:]} = <int>_a.n")
+                body.append(f"if _a.n: {v}.{cfa} = <{cy(ft)}>(<{cls}>_a).ptr")
+            out.append(f"if {pf} is not None:")
+            out += ["    " + b for b in body]
         return out
 
     @staticmethod
@@ -1539,6 +1851,7 @@ class Gen:
             code.append(self.from_code(n))
         for n in sorted(self.ty.need_arr):
             code.append(self.arr_code(n))
+        code += self.ty.ref_code()
         tuples, stubs = [], []
         for n in sorted((self.ty.need_fill | self.ty.need_from) - SPECIAL_VALUES):
             pys = self.ty.py_fields(n)
@@ -1656,6 +1969,11 @@ def main() -> None:
         g.emit_scope(name, fns[b], fns[e], only_if)
     for f in m.functions:
         g.emit_function(f, parts)
+
+    # a table entry that matched nothing is a typo or a field CUI removed
+    tables = OPT_REFS | set(OPT_ARRAYS) | set(OPT_REF_ARRAYS) | OPT_VALPTRS
+    if tables - g.pl.used:
+        sys.exit(f"unused OPT_* entries: {sorted(tables - g.pl.used)}")
 
     # names must be unique on Context
     names = [w[1] for w in g.wrapped]

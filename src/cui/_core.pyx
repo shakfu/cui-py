@@ -13,6 +13,7 @@ what it keeps across frames, so nothing passed in needs to live longer.
 from libc.stdlib cimport calloc, free, malloc
 from libc.string cimport memchr, memcpy, memset
 from cpython.ref cimport PyObject
+from cpython.buffer cimport PyObject_GetBuffer, PyBuffer_Release, PyBUF_SIMPLE
 from cpython.pythread cimport PyThread_get_thread_ident
 from libc.errno cimport errno
 
@@ -269,7 +270,7 @@ cdef class _FloatArray:
 
 
 cdef class _ScalarArray:
-    """A mutable array of bool ("?"), int ("i"), uint32 ("I"), float ("f") or double ("d")."""
+    """A mutable array of bool ("?"), int ("i"), uint32 ("I"), uint8 ("B"), float ("f") or double ("d")."""
     cdef void *ptr
     cdef readonly Py_ssize_t n
     cdef str code
@@ -285,6 +286,8 @@ cdef class _ScalarArray:
             size = sizeof(int)
         elif code == "I":
             size = sizeof(uint32_t)
+        elif code == "B":
+            size = sizeof(uint8_t)
         elif code == "f":
             size = sizeof(float)
         elif code == "d":
@@ -302,6 +305,8 @@ cdef class _ScalarArray:
                 (<int *>self.ptr)[i] = items[i]
             elif code == "I":
                 (<uint32_t *>self.ptr)[i] = items[i]
+            elif code == "B":
+                (<uint8_t *>self.ptr)[i] = items[i]
             elif code == "f":
                 (<float *>self.ptr)[i] = items[i]
             else:
@@ -318,9 +323,132 @@ cdef class _ScalarArray:
             return [(<int *>self.ptr)[i] for i in range(self.n)]
         if self.code == "I":
             return [(<uint32_t *>self.ptr)[i] for i in range(self.n)]
+        if self.code == "B":
+            return [(<uint8_t *>self.ptr)[i] for i in range(self.n)]
         if self.code == "f":
             return [(<float *>self.ptr)[i] for i in range(self.n)]
         return [(<double *>self.ptr)[i] for i in range(self.n)]
+
+
+ctypedef object (*_ref_get_fn)(const void *, Py_ssize_t)
+ctypedef int (*_ref_set_fn)(void *, Py_ssize_t, object) except -1
+
+
+cdef class Ref:
+    """A value a component reads and writes, for an option that takes a pointer.
+
+        sel = cui.Ref(-1)
+        ui.treemap("t", items, selected=sel)
+        sel.value
+
+    C writes it during the frame, also after the call returns, so `value` is
+    current once the frame ends. A Ref passed for an array option holds a list.
+    """
+    cdef object _value      # while unbound
+    cdef void *_cell        # C storage once bound
+    cdef str _tag
+    cdef Py_ssize_t _n      # -1: one value; else a list of _n
+    cdef _ref_get_fn _get
+    cdef _ref_set_fn _set
+    cdef object _frame      # (context, frame serial) of the last bind
+    cdef list _retired      # cells replaced during that frame, freed after it
+
+    def __init__(self, value=None):
+        self.value = value
+
+    def __dealloc__(self):
+        free(self._cell)
+        if self._retired is not None:
+            for c in self._retired:
+                free(<void *><size_t>c)
+
+    @property
+    def value(self):
+        cdef Py_ssize_t i
+        if self._cell == NULL:
+            return self._value
+        if self._n < 0:
+            return self._get(self._cell, 0)
+        return [self._get(self._cell, i) for i in range(self._n)]
+
+    @value.setter
+    def value(self, v):
+        cdef Py_ssize_t i
+        if self._cell == NULL:
+            self._value = v
+        elif self._n < 0:
+            self._set(self._cell, 0, v)
+        else:
+            v = list(v)
+            if len(v) != self._n:  # a new length: unbind; C may hold the cell until the frame ends
+                if self._retired is None:
+                    self._retired = []
+                self._retired.append(<size_t>self._cell)
+                self._cell = NULL
+                self._value = v
+                return
+            for i in range(self._n):
+                self._set(self._cell, i, v[i])
+
+    def __repr__(self):
+        return f"Ref({self.value!r})"
+
+
+cdef void *_ref_bind(Ref r, list keep, object ctx, str tag, size_t size,
+                     _ref_get_fn get, _ref_set_fn put, Py_ssize_t n) except NULL:
+    """Points C at `r`'s storage for `n` values (-1: one) of type `tag`, kept for the frame."""
+    if r is None:
+        raise TypeError("expected a cui.Ref")
+    frame = (ctx, ctx._frame_serial)
+    if r._retired and r._frame is not None and r._frame != frame:
+        for c in r._retired:
+            free(<void *><size_t>c)
+        r._retired = None
+    keep.append(r)
+    if r._cell != NULL and r._tag != tag:
+        raise TypeError(f"this Ref holds a {r._tag}; use another Ref for a {tag}")
+    if r._cell != NULL and r._n == n:
+        r._frame = frame
+        return r._cell
+    v = r.value
+    if n >= 0:
+        v = [] if v is None else list(v)
+        if len(v) != n:
+            raise ValueError(f"expected a list of {n} items, got {len(v)}")
+    cdef void *cell = calloc(n if n > 0 else 1, size)
+    if cell == NULL:
+        raise MemoryError()
+    cdef Py_ssize_t i
+    try:
+        if n < 0:
+            if v is not None:
+                put(cell, 0, v)
+        else:
+            for i in range(n):
+                put(cell, i, v[i])
+    except BaseException:
+        free(cell)
+        raise
+    if r._cell != NULL:
+        if r._frame == frame:  # C may still hold the old cell this frame
+            if r._retired is None:
+                r._retired = []
+            r._retired.append(<size_t>r._cell)
+        else:
+            free(r._cell)
+    r._cell = cell
+    r._tag = tag
+    r._n = n
+    r._get = get
+    r._set = put
+    r._frame = frame
+    return cell
+
+
+cdef char _ascii_char(object s) except? 0:
+    if not isinstance(s, str) or len(s) > 1 or (s and ord(s) > 127):
+        raise ValueError("expected one ASCII character or an empty string")
+    return <char>(ord(s) if s else 0)
 
 
 cdef class _Mem:
@@ -336,6 +464,11 @@ cdef class _Mem:
 
     def __dealloc__(self):
         free(self.ptr)
+
+
+cdef inline void *_mem_ptr(_Mem m) noexcept:
+    """`m.ptr`; `m` must be kept alive by the caller."""
+    return m.ptr
 
 
 cdef class TextBuffer:
@@ -741,14 +874,21 @@ cdef class _ContextBase:
     cdef bint _painting
     cdef int _open_scopes
     cdef object _paint_error
+    cdef dict _images       # RGBA texture -> (width, height), for image_update
+    cdef bint _in_input_cb  # an input hook or route is running
+    cdef object _input_hook
+    cdef object _input_error
+    cdef readonly unsigned long long _frame_serial  # counts finished frames, for Ref
 
     def __cinit__(self):
         self._keep = []
         self._pinned = []
+        self._images = {}
 
     cdef void _frame_done(self) noexcept:
         """Drops what the frame's paint needed and applies queued buffer writes."""
         self._keep = []
+        self._frame_serial += 1
         pinned, self._pinned = self._pinned, []
         for b in pinned:
             (<_Pinned>b)._unpin()
@@ -762,8 +902,23 @@ cdef class _ContextBase:
         self._need_alive()
         if self._painting:
             raise RuntimeError("components cannot be built inside a paint callback")
+        if self._in_input_cb:
+            raise RuntimeError("components cannot be built inside an input hook or route")
         if not self._in_frame:
             raise RuntimeError("components can only be built inside a frame")
+        return 0
+
+    cdef int _need_input(self) except -1:
+        self._need_alive()
+        if self._in_input_cb:
+            raise RuntimeError("input cannot be injected inside an input hook or route")
+        return 0
+
+    cdef int _raise_input_error(self) except -1:
+        e = self._input_error
+        self._input_error = None
+        if e is not None:
+            raise e
         return 0
 
     cdef int _need_paint(self) except -1:
@@ -795,6 +950,47 @@ cdef void _paint_trampoline(cui_ctx *ui, cui_rect rect, void *user) noexcept wit
         ctx._paint_error = e
     finally:
         ctx._painting = False
+
+
+InputEvent = _namedtuple(
+    "InputEvent", "kind position delta button key mods finger down focused text",
+    defaults=(Vec2(0.0, 0.0), Vec2(0.0, 0.0), 0, 0, 0, 0, False, False, None))
+
+
+cdef object _from_input_event(const cui_input_event *e):
+    return InputEvent(
+        <int>e.kind, _from_cui_vec2(e.position), _from_cui_vec2(e.delta), <int>e.button,
+        <int>e.key, e.mods, e.finger, e.down, e.focused,
+        None if e.text == NULL else (<bytes>e.text).decode("utf-8", "replace"))
+
+
+cdef cbool _input_hook_trampoline(cui_ctx *ui, const cui_input_event *event,
+                                  void *user) noexcept with gil:
+    cdef _ContextBase ctx = <_ContextBase>user
+    if ctx.ui == NULL or ctx._input_hook is None or ctx._input_error is not None:
+        return False
+    ctx._in_input_cb = True
+    try:
+        return bool(ctx._input_hook(_from_input_event(event)))
+    except BaseException as e:
+        ctx._input_error = e
+        return False
+    finally:
+        ctx._in_input_cb = False
+
+
+cdef cbool _input_route_trampoline(cui_ctx *ui, void *user,
+                                   const cui_input_event *event) noexcept with gil:
+    cdef tuple holder = <tuple>user
+    cdef _ContextBase ctx = <_ContextBase>holder[0]
+    ctx._in_input_cb = True
+    try:
+        return bool(holder[1](_from_input_event(event)))
+    except BaseException as e:
+        ctx._input_error = e
+        return False
+    finally:
+        ctx._in_input_cb = False
 
 
 cdef void _clip_set(void *user, const char *utf8) noexcept with gil:
@@ -906,6 +1102,9 @@ cdef class Context(_GenContext):
         self._need_alive()
         if self._in_frame:
             raise RuntimeError("begin_frame called twice without end_frame")
+        if self._in_input_cb:
+            raise RuntimeError("begin_frame cannot be called inside an input hook or route")
+        self._raise_input_error()
         cui_begin_frame(self.ui, dt)
         self._in_frame = True
         self._have_draw = False
@@ -921,6 +1120,7 @@ cdef class Context(_GenContext):
         self._frame_done()
         self._have_draw = True
         self._raise_paint_error()
+        self._raise_input_error()
 
     def frame(self, float dt=1.0 / 60.0):
         """`with ctx.frame(): ...` builds one frame."""
@@ -929,23 +1129,33 @@ cdef class Context(_GenContext):
         f.dt = dt
         return f
 
-    def canvas(self, str id not None, width, height, paint=None):
-        """A box you paint yourself. `paint(rect)` runs after layout and may call `draw_*`."""
+    def canvas(self, str id not None, width, height, paint=None, *, bint focusable=False,
+               bint component_input=False):
+        """A box you paint yourself. `paint(rect)` runs after layout and may call `draw_*`.
+
+        `focusable` makes it a Tab stop that Enter and Space click. `component_input`
+        also sends it keys and text through `dispatch_input`'s route.
+        """
         self._need_frame()
+        if component_input and not focusable:
+            raise ValueError("component_input needs focusable")
         cdef const char *c_id = _cstr(self._keep, id)
         cdef cui_size w = _to_cui_size(width)
         cdef cui_size h = _to_cui_size(height)
+        cdef cui_canvas_opts o
+        o.focusable = focusable
+        o.component_input = component_input
         cdef cui_canvas_result r
         cdef PyObject *p
         if paint is None:
-            r = cui_canvas(self.ui, c_id, w, h, NULL, NULL, 0)
+            r = cui_canvas_ex(self.ui, c_id, w, h, NULL, NULL, 0, &o)
         else:
             if not callable(paint):
                 raise TypeError("paint must be callable")
             holder = (self, paint)
             self._keep.append(holder)
             p = <PyObject *>holder
-            r = cui_canvas(self.ui, c_id, w, h, _paint_trampoline, &p, sizeof(PyObject *))
+            r = cui_canvas_ex(self.ui, c_id, w, h, _paint_trampoline, &p, sizeof(PyObject *), &o)
         return CanvasResult(_from_cui_rect(r.rect), r.hovered, r.pressed, r.clicked,
                             _from_cui_vec2(r.mouse))
 
@@ -962,14 +1172,126 @@ cdef class Context(_GenContext):
         self._pinned.append(p)
         cuipy_pty_frame(self.ui, p.p, c_id)
 
-    def image_create(self, int width, int height, bytes rgba not None):
-        """A texture from RGBA pixels, `width * height * 4` bytes."""
+    def set_input_hook(self, hook):
+        """Calls `hook(InputEvent)` for each input event before CUI applies it; None removes it.
+
+        A hook that returns True takes the event from CUI, to replay later with
+        `dispatch_input`. An exception in it is raised at the next frame boundary.
+        """
+        self._need_alive()
+        if self._in_input_cb:
+            raise RuntimeError("the input hook cannot be changed inside an input hook or route")
+        if hook is not None and not callable(hook):
+            raise TypeError("hook must be callable or None")
+        self._input_hook = hook
+        if hook is None:
+            cui_set_input_hook(self.ui, NULL, NULL)
+        else:
+            cui_set_input_hook(self.ui, _input_hook_trampoline, <void *>self)
+
+    def dispatch_input(self, event not None, route=None):
+        """Applies a KEY, TEXT or FOCUS `InputEvent`, after the frame begins and before components.
+
+        `route(event)` returns True to handle the event instead of CUI. The input
+        hook is off while this runs. Re-raises an exception from `route`.
+        """
+        self._need_frame()
+        if route is not None and not callable(route):
+            raise TypeError("route must be callable or None")
+        kind, position, delta, button, key, mods, finger, down, focused, text = event
+        if kind not in (CUI_INPUT_KEY, CUI_INPUT_TEXT, CUI_INPUT_FOCUS):
+            raise ValueError("dispatch_input takes KEY, TEXT and FOCUS events")
+        cdef cui_input_event e
+        memset(&e, 0, sizeof(e))
+        e.kind = <cui_input_event_kind>kind
+        e.key = <cui_key>(<int>key)
+        e.mods = mods
+        e.down = down
+        e.focused = focused
+        cdef bytes b
+        if kind == CUI_INPUT_TEXT:
+            if not isinstance(text, str):
+                raise TypeError("a TEXT event needs text")
+            b = (<str>text).encode("utf-8")
+            if memchr(<const char *>b, 0, len(b)) != NULL:
+                raise ValueError("text contains a NUL character")
+            e.text = b
+        holder = (self, route)
+        cdef cui_input_route_fn rf = NULL
+        if route is not None:
+            rf = _input_route_trampoline
+        hooked = self._input_hook is not None
+        if hooked:
+            cui_set_input_hook(self.ui, NULL, NULL)  # cui_input_text would call it again
+        try:
+            cui_dispatch_input(self.ui, &e, rf, <void *>holder)
+        finally:
+            if hooked:
+                cui_set_input_hook(self.ui, _input_hook_trampoline, <void *>self)
+        self._raise_input_error()
+
+    def image_create(self, int width, int height, rgba not None):
+        """A texture from RGBA pixels: any C-contiguous buffer of `width * height * 4` bytes."""
         self._need_alive()
         if width <= 0 or height <= 0:
             raise ValueError("width and height must be positive")
-        if len(rgba) != <Py_ssize_t>width * height * 4:
-            raise ValueError(f"expected {width * height * 4} bytes of RGBA, got {len(rgba)}")
-        return cui_image_create(self.ui, width, height, <const char *>rgba)
+        cdef Py_ssize_t need = <Py_ssize_t>width * height * 4
+        cdef Py_buffer view
+        cdef cui_texture t
+        PyObject_GetBuffer(rgba, &view, PyBUF_SIMPLE)
+        try:
+            if view.len != need:
+                raise ValueError(f"expected {need} bytes of RGBA, got {view.len}")
+            t = cui_image_create(self.ui, width, height, view.buf)
+        finally:
+            PyBuffer_Release(&view)
+        if t:
+            self._images[t] = (width, height)
+        return t
+
+    def image_load(self, str path not None):
+        """(texture, width, height) of a PNG or JPEG file; texture 0 when it fails."""
+        self._need_alive()
+        cdef int w = 0
+        cdef int h = 0
+        cdef cui_texture t = cui_image_load(self.ui, _encode(path), &w, &h)
+        if t:
+            self._images[t] = (w, h)
+        return t, w, h
+
+    def image_destroy(self, tex):
+        self._need_alive()
+        self._images.pop(tex, None)
+        cui_image_destroy(self.ui, <cui_texture>tex)
+
+    def image_update(self, tex, int x, int y, int width, int height, rgba not None,
+                     int stride=0):
+        """Replaces a region of a texture from `image_create` or `image_load`.
+
+        `rgba` is any C-contiguous buffer; `stride` is its bytes per row, default `width * 4`.
+        """
+        self._need_alive()
+        size = self._images.get(tex)
+        if size is None:
+            raise ValueError(f"{tex!r} is not an image texture of this context")
+        tw, th = size
+        if width <= 0 or height <= 0:
+            raise ValueError("width and height must be positive")
+        if x < 0 or y < 0 or <long long>x + width > tw or <long long>y + height > th:
+            raise ValueError(f"region {x},{y} {width}x{height} is outside the {tw}x{th} texture")
+        if stride == 0:
+            stride = width * 4
+        if stride < width * 4:
+            raise ValueError(f"stride {stride} is less than width * 4")
+        cdef Py_ssize_t need = <Py_ssize_t>stride * (height - 1) + <Py_ssize_t>width * 4
+        cdef Py_buffer view
+        PyObject_GetBuffer(rgba, &view, PyBUF_SIMPLE)
+        try:
+            if view.len < need:
+                raise ValueError(f"expected at least {need} bytes of RGBA, got {view.len}")
+            cui_image_update(self.ui, <cui_texture>tex, x, y, width, height, view.buf, stride)
+        finally:
+            PyBuffer_Release(&view)
 
     def font_load_memory(self, bytes data not None):
         """Loads a TrueType or OpenType font. Returns its handle, or -1."""
@@ -1022,6 +1344,8 @@ cdef class Context(_GenContext):
 # App
 # ---------------------------------------------------------------------------
 
+WindowPlacement = _namedtuple("WindowPlacement", "x y width height state has_position")
+
 
 cdef class App:
     """A native window with an event loop.
@@ -1037,12 +1361,19 @@ cdef class App:
     def __init__(self, str title not None="CUI", int width=1080, int height=720, *,
                  int min_width=0, int min_height=0, bint fixed_size=False, bint continuous=False,
                  bint no_vsync=False, bint hidden=False, int renderer=0, int theme=0,
-                 int accent=0, bint follow_system_theme=False, app_id=None):
+                 int accent=0, bint follow_system_theme=False, app_id=None, placement=None):
         if self.app != NULL:
             raise RuntimeError("App.__init__ called twice")
         self._strings = []
         cdef cui_app_desc d
+        cdef cui_window_placement p
         memset(&d, 0, sizeof(d))
+        if placement is not None:
+            p.x, p.y, p.width, p.height, state, p.has_position = placement
+            if state not in (CUI_WINDOW_NORMAL, CUI_WINDOW_MAXIMIZED, CUI_WINDOW_MINIMIZED):
+                raise ValueError(f"invalid window state {state!r}")
+            p.state = <cui_window_state>state
+            d.placement = &p
         d.title = _cstr(self._strings, title)
         d.width = width
         d.height = height
@@ -1071,6 +1402,8 @@ cdef class App:
     cdef void _close(self) noexcept:
         if self.app != NULL:
             if self._ui is not None:
+                cui_set_input_hook(self._ui.ui, NULL, NULL)
+                self._ui._input_hook = None
                 self._ui.ui = NULL
                 self._ui._in_frame = False
                 self._ui._frame_done()
@@ -1114,6 +1447,7 @@ cdef class App:
         ctx._frame_done()
         ctx._in_frame = ok
         ctx._raise_paint_error()
+        ctx._raise_input_error()
         return ok
 
     def frames(self):
@@ -1142,6 +1476,43 @@ cdef class App:
     def size(self):
         self._need_app()
         return _from_cui_vec2(cui_app_size(self.app))
+
+    def maximize(self):
+        self._need_app()
+        cui_app_maximize(self.app)
+
+    def minimize(self):
+        self._need_app()
+        cui_app_minimize(self.app)
+
+    def restore(self):
+        """Undoes a maximize or a minimize."""
+        self._need_app()
+        cui_app_restore(self.app)
+
+    def window_state(self):
+        """WINDOW_NORMAL, WINDOW_MAXIMIZED or WINDOW_MINIMIZED, as the system reports it now."""
+        self._need_app()
+        return <int>cui_app_window_state(self.app)
+
+    def set_position(self, int x, int y):
+        """Moves the content's top-left corner to x, y in desktop coordinates."""
+        self._need_app()
+        cui_app_set_position(self.app, x, y)
+
+    def placement(self):
+        """The normal size and place as a `WindowPlacement`, to pass back as `App(placement=...)`."""
+        self._need_app()
+        cdef cui_window_placement p
+        memset(&p, 0, sizeof(p))
+        if not cui_app_placement(self.app, &p):
+            raise RuntimeError("the window has no placement")
+        return WindowPlacement(p.x, p.y, p.width, p.height, <int>p.state, p.has_position)
+
+    def follow_system_theme(self, bint follow):
+        """Starts or stops following the OS light/dark setting."""
+        self._need_app()
+        cui_app_follow_system_theme(self.app, follow)
 
     def is_software(self):
         self._need_app()

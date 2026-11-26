@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.14)
 
 project(cui
-    VERSION 1.4.0
+    VERSION 1.5.0
     DESCRIPTION "Modern native UI components for C"
     LANGUAGES C)
+
+set(CUI_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE INTERNAL "CUI root")
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(CUI_IS_TOP_LEVEL ON)
@@ -19,8 +21,11 @@ option(CUI_WITH_APP "Include the app layer (windows, events)" ON)
 option(CUI_DEFAULT_FONTS "Embed Inter, Geist and Lucide" ON)
 option(CUI_STB_IMAGE "Image loading with stb_image" ON)
 option(CUI_IMAGE_ALL_FORMATS "Also decode BMP, GIF and TGA (PNG and JPEG are always on)" OFF)
-set(CUI_PLATFORM "auto" CACHE STRING "Window backend: auto, win32, cocoa, x11, sdl2, glfw")
-set_property(CACHE CUI_PLATFORM PROPERTY STRINGS auto win32 cocoa x11 sdl2 glfw)
+option(CUI_D3D12 "Windows: add the Direct3D 12 renderer (cui_gpu_*)" OFF)
+option(CUI_VULKAN "Linux: add the Vulkan renderer (cui_gpu_*)" OFF)
+option(CUI_METAL "macOS: add the Metal renderer (cui_gpu_*)" OFF)
+set(CUI_PLATFORM "auto" CACHE STRING "Window backend: auto, win32, cocoa, x11, wayland, sdl2, glfw, android, ios")
+set_property(CACHE CUI_PLATFORM PROPERTY STRINGS auto win32 cocoa x11 wayland sdl2 glfw android ios)
 
 if(NOT CMAKE_C_STANDARD)
     set(CMAKE_C_STANDARD 99)
@@ -43,6 +48,7 @@ set(CUI_CORE_SOURCES
     src/cui_actions.c
     src/cui_pickers.c
     src/cui_disclosure.c
+    src/cui_loading.c
     src/cui_grid.c
     src/cui_treetable.c
     src/cui_code.c
@@ -59,6 +65,7 @@ set(CUI_CORE_SOURCES
     src/cui_viz.c
     src/cui_motion.c
     src/cui_ai.c
+    src/cui_voice.c
     src/cui_image.c
     src/cui_nodes.c
     src/cui_flame.c
@@ -73,8 +80,10 @@ set(CUI_CORE_SOURCES
     src/cui_regex.c
     src/cui_devviews.c
     src/cui_instrument.c
+    src/cui_canvas.c
     src/cui_tour.c
     src/cui_photo.c
+    src/cui_creative.c
     src/cui_files.c
     src/cui_terminal.c
     src/cui_emoji.c
@@ -96,10 +105,12 @@ if(CUI_WITH_APP)
         else()
             set(CUI_BACKEND x11)
         endif()
+    elseif(CUI_PLATFORM STREQUAL "wayland")
+        set(CUI_BACKEND sdl2)
     else()
         set(CUI_BACKEND ${CUI_PLATFORM})
     endif()
-    if(CUI_BACKEND STREQUAL "cocoa")
+    if(CUI_BACKEND STREQUAL "cocoa" OR CUI_BACKEND STREQUAL "ios")
         enable_language(OBJC)
     endif()
     list(APPEND CUI_CORE_SOURCES src/platform/cui_app.c src/platform/cui_dialogs.c)
@@ -113,6 +124,10 @@ if(CUI_WITH_APP)
         list(APPEND CUI_CORE_SOURCES src/platform/cui_app_sdl2.c)
     elseif(CUI_BACKEND STREQUAL "glfw")
         list(APPEND CUI_CORE_SOURCES src/platform/cui_app_glfw.c)
+    elseif(CUI_BACKEND STREQUAL "android")
+        list(APPEND CUI_CORE_SOURCES src/platform/cui_app_android.c)
+    elseif(CUI_BACKEND STREQUAL "ios")
+        list(APPEND CUI_CORE_SOURCES src/platform/cui_app_ios.m)
     else()
         message(FATAL_ERROR "Unknown CUI_PLATFORM '${CUI_BACKEND}'")
     endif()
@@ -197,11 +212,71 @@ elseif(CUI_BACKEND STREQUAL "x11")
     target_include_directories(cui PRIVATE ${X11_INCLUDE_DIR})
     target_link_libraries(cui PUBLIC ${X11_LIBRARIES} ${CMAKE_DL_LIBS})
 elseif(CUI_BACKEND STREQUAL "sdl2")
-    find_package(SDL2 REQUIRED)
+    if(CUI_PLATFORM STREQUAL "wayland")
+        find_package(SDL2 2.0.22 REQUIRED) # SDL_HINT_VIDEODRIVER
+        target_compile_definitions(cui PRIVATE CUI_SDL_WAYLAND_ONLY)
+    else()
+        find_package(SDL2 REQUIRED)
+    endif()
     target_link_libraries(cui PUBLIC SDL2::SDL2)
 elseif(CUI_BACKEND STREQUAL "glfw")
     find_package(glfw3 REQUIRED)
     target_link_libraries(cui PUBLIC glfw)
+elseif(CUI_BACKEND STREQUAL "android")
+    target_link_libraries(cui PUBLIC android EGL log)
+    # cui_app_android.c includes android_native_app_glue.h; find it in the NDK
+    # so a root-project build compiles (the wrapper under platform/android
+    # adds the same directory and owns the glue packaging)
+    set(CUI_ANDROID_GLUE "" CACHE PATH "directory with android_native_app_glue.c")
+    if(NOT CUI_ANDROID_GLUE)
+        if(ANDROID_NDK)
+            set(CUI_ANDROID_GLUE ${ANDROID_NDK}/sources/android/native_app_glue)
+        elseif(DEFINED ENV{ANDROID_NDK_HOME})
+            set(CUI_ANDROID_GLUE $ENV{ANDROID_NDK_HOME}/sources/android/native_app_glue)
+        endif()
+    endif()
+    if(CUI_ANDROID_GLUE AND EXISTS ${CUI_ANDROID_GLUE}/android_native_app_glue.h)
+        target_include_directories(cui PRIVATE ${CUI_ANDROID_GLUE})
+    else()
+        message(FATAL_ERROR "android_native_app_glue not found; set CUI_ANDROID_GLUE to the NDK's sources/android/native_app_glue")
+    endif()
+elseif(CUI_BACKEND STREQUAL "ios")
+    target_link_libraries(cui PUBLIC "-framework UIKit" "-framework QuartzCore" "-framework OpenGLES" "-framework Foundation" "-framework CoreGraphics" "-framework CoreText")
+    set_source_files_properties(src/platform/cui_app_ios.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+endif()
+
+# One GPU renderer per platform (cui_gpu_*): Direct3D 12 on Windows, Vulkan on Linux, Metal on macOS
+if(CUI_D3D12 AND NOT WIN32)
+    message(FATAL_ERROR "CUI_D3D12 is for Windows")
+endif()
+if(CUI_D3D12)
+    target_sources(cui PRIVATE src/render/cui_render_d3d12.c)
+    target_compile_definitions(cui PUBLIC CUI_D3D12)
+    target_link_libraries(cui PUBLIC d3d12 dxgi d3dcompiler dxguid)
+endif()
+if(CUI_VULKAN AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "CUI_VULKAN is for Linux")
+endif()
+if(CUI_VULKAN)
+    # headers and the loader: the system's, or the Vulkan SDK (VULKAN_SDK)
+    find_package(Vulkan REQUIRED)
+    target_sources(cui PRIVATE src/render/cui_render_vulkan.c)
+    target_compile_definitions(cui PUBLIC CUI_VULKAN)
+    target_link_libraries(cui PUBLIC Vulkan::Vulkan)
+    find_package(X11 REQUIRED)
+    target_include_directories(cui PRIVATE ${X11_INCLUDE_DIR})
+    target_link_libraries(cui PUBLIC ${X11_LIBRARIES})
+endif()
+
+if(CUI_METAL AND NOT APPLE)
+    message(FATAL_ERROR "CUI_METAL is for macOS")
+endif()
+if(CUI_METAL)
+    enable_language(OBJC)
+    target_sources(cui PRIVATE src/render/cui_render_metal.m)
+    set_source_files_properties(src/render/cui_render_metal.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_compile_definitions(cui PUBLIC CUI_METAL)
+    target_link_libraries(cui PUBLIC "-framework Cocoa" "-framework Metal" "-framework QuartzCore")
 endif()
 
 # A minor release adds fields to option and description structs, which changes their size, so a
@@ -236,6 +311,9 @@ if(CUI_BACKEND STREQUAL "sdl2")
 elseif(CUI_BACKEND STREQUAL "glfw")
     string(APPEND CUI_CONFIG_DEPS "find_dependency(glfw3)\n")
 endif()
+if(CUI_VULKAN)   # (the installed target names Vulkan::Vulkan)
+    string(APPEND CUI_CONFIG_DEPS "find_dependency(Vulkan)\n")
+endif()
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/cuiConfig.cmake
     "include(CMakeFindDependencyMacro)\n${CUI_CONFIG_DEPS}include(\"\${CMAKE_CURRENT_LIST_DIR}/cuiTargets.cmake\")\ninclude(\"\${CMAKE_CURRENT_LIST_DIR}/CuiApp.cmake\")\n")
 write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/cuiConfigVersion.cmake COMPATIBILITY SameMajorVersion)
@@ -250,6 +328,22 @@ elseif(CUI_BACKEND STREQUAL "cocoa")
     set(CUI_PC_LIBS "${CUI_PC_LIBS} -framework Cocoa -framework QuartzCore -framework OpenGL")
 elseif(CUI_BACKEND STREQUAL "win32")
     set(CUI_PC_LIBS "${CUI_PC_LIBS} -luser32 -lgdi32 -lopengl32 -lshell32 -limm32 -ldwmapi -lcomdlg32 -lole32")
+endif()
+# the GPU renderer's libraries, for a static link
+if(CUI_D3D12)
+    set(CUI_PC_LIBS "${CUI_PC_LIBS} -ld3d12 -ldxgi -ld3dcompiler -ldxguid")
+endif()
+if(CUI_VULKAN)
+    set(CUI_PC_LIBS "${CUI_PC_LIBS} -lvulkan")
+    if(NOT CUI_BACKEND STREQUAL "x11")
+        set(CUI_PC_LIBS "${CUI_PC_LIBS} -lX11")
+    endif()
+endif()
+if(CUI_METAL)
+    set(CUI_PC_LIBS "${CUI_PC_LIBS} -framework Metal")
+    if(NOT CUI_BACKEND STREQUAL "cocoa")
+        set(CUI_PC_LIBS "${CUI_PC_LIBS} -framework Cocoa -framework QuartzCore")
+    endif()
 endif()
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/cui.pc
 "prefix=\${pcfiledir}/../..

@@ -2,7 +2,7 @@
  *
  * Implements exactly the same shading as the GPU shader (see
  * docs/rendering.md): signed distance rounded rectangles with borders,
- * gaussian shadows, alpha-texture text, images and solid geometry, blended
+ * gaussian shadows, alpha-texture text, images, solid geometry and ordered dither, blended
  * with premultiplied alpha. Rendering can be split over several threads by
  * horizontal bands. */
 #include "../cui_internal.h"
@@ -76,6 +76,10 @@ static cui_texture cui__sw_tex_create(void *user, int w, int h, cui_texture_form
         slot = r->tex_count++;
     }
     cui__sw_tex *t = &r->tex[slot];
+    if (w < 1 || h < 1) {   /* an empty texture would clamp sample coordinates to -1: make it one blank texel */
+        w = h = 1;
+        pixels = NULL;
+    }
     cui__sw_note_change(r, (cui_texture)(slot + 1), 0, 0, w, h);
     t->w = w; t->h = h; t->fmt = fmt; t->used = true;
     size_t bytes = (size_t)w * (size_t)h * (size_t)fmt;
@@ -92,11 +96,13 @@ static void cui__sw_tex_update(void *user, cui_texture tex, int x, int y, int w,
     cui__sw_tex *t = &r->tex[slot];
     cui__sw_note_change(r, tex, x, y, x + w, y + h);
     int bpp = (int)t->fmt;
+    int cx0 = x < 0 ? 0 : x, cx1 = x + w > t->w ? t->w : x + w;   /* clip to the texture: the rect may hang over an edge */
+    if (cx1 <= cx0) return;
     const uint8_t *src = pixels;
     for (int row = 0; row < h; row++) {
         if (y + row < 0 || y + row >= t->h) continue;
-        memcpy(t->data + ((size_t)(y + row) * (size_t)t->w + (size_t)x) * (size_t)bpp,
-               src + (size_t)row * (size_t)stride, (size_t)w * (size_t)bpp);
+        memcpy(t->data + ((size_t)(y + row) * (size_t)t->w + (size_t)cx0) * (size_t)bpp,
+               src + (size_t)row * (size_t)stride + (size_t)(cx0 - x) * (size_t)bpp, (size_t)(cx1 - cx0) * (size_t)bpp);
     }
 }
 
@@ -187,6 +193,14 @@ static inline float cui__erf(float x) {
 }
 
 static inline float cui__sat(float x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+
+/* The 8x8 Bayer threshold of the cell at (u, v), from the bits of x ^ y and y: the same
+ * arithmetic as the shader, so both renderers light the same cells. */
+static inline float cui__sw_bayer(float u, float v) {
+    unsigned x = (unsigned)(int)floorf(u) & 7u, y = (unsigned)(int)floorf(v) & 7u, a = x ^ y;
+    unsigned m = ((a & 1u) << 5) | ((y & 1u) << 4) | ((a & 2u) << 2) | ((y & 2u) << 1) | ((a & 4u) >> 1) | ((y & 4u) >> 2);
+    return ((float)m + 0.5f) / 64.0f;
+}
 
 /* Shadow falloff 0.5 * (1 - erf(z)) over the z a shadow uses (-4 to 2.8, outside it the
  * value is 1 or ignored), as a table read with linear interpolation: within 2e-6 of the
@@ -389,6 +403,14 @@ static void cui__raster_tri(const cui__sw_job *job, const cui_vertex *a, const c
                     if (z > CUI__SHADOW_Z1) continue;
                     float al = ca * cui__shadow_falloff(z);
                     o.r = cr * al; o.g = cg * al; o.b = cb * al; o.a = al;
+                } else if (mode == CUI_SHADE_DITHER) {
+                    /* color alpha is the density, border the floor, border color the dot */
+                    float cov = cui__sat(0.5f - d);
+                    if (cov <= 0) continue;
+                    float t = cui__sw_bayer(a->u * w0 + b->u * w1 + c->u * w2, a->v * w0 + b->v * w1 + c->v * w2);
+                    if (t < bw || t >= ca) continue;
+                    float k = bca * cov;
+                    o.r = bcr * k; o.g = bcg * k; o.b = bcb * k; o.a = k;
                 } else { /* image */
                     float cov = cui__sat(0.5f - d);
                     if (cov <= 0) continue;
@@ -413,6 +435,7 @@ static bool cui__raster_quad(const cui__sw_job *job, const cui_vertex *v0, const
     if (v0->x >= v1->x || v0->y >= v3->y) return false;
     if (memcmp(&v0->color, &v1->color, 4) != 0 || memcmp(&v2->color, &v3->color, 4) != 0) return false;
     int mode = (int)(v0->mode + 0.5f);
+    if (mode == CUI_SHADE_DITHER) return false;   /* the triangle path has the cell lookup */
     float qx0 = v0->x, qy0 = v0->y, qx1 = v1->x, qy1 = v3->y;
     int x0 = CUI_MAX(cx0, (int)ceilf(qx0 - 0.5f)), x1 = CUI_MIN(cx1, (int)ceilf(qx1 - 0.5f));
     int y0 = CUI_MAX(cy0, (int)ceilf(qy0 - 0.5f)), y1 = CUI_MIN(cy1, (int)ceilf(qy1 - 0.5f));
@@ -666,6 +689,13 @@ static void cui__sw_tile_hashes(cui_sw_renderer *r, const cui_draw_data *dd, uin
                 }
         }
     }
+}
+
+/** Paints the entire screenshot without changing the window's incremental render state. */
+void cui__sw_render_screenshot(cui_sw_renderer *r, const cui_draw_data *dd, void *rgba, int stride) {
+    int width = dd->width_px, height = dd->height_px;
+    if (!r || width <= 0 || height <= 0) return;
+    cui__sw_paint_rect(r, dd, rgba, width, height, stride, CUI_SW_RGBA, 0, 0, width, height);
 }
 
 void cui_sw_render(cui_sw_renderer *r, const cui_draw_data *dd, void *pixels, int width, int height, int stride, cui_sw_format fmt) {

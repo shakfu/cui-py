@@ -27,6 +27,6 @@ float cuix_take_scroll(cui_ctx *ui);
 void cuix_set_cursor(cui_ctx *ui, cui_cursor cursor); /* the pointer shape, this frame */
 
 void cuix_set_clipboard(cui_ctx *ui, const char *utf8);
-const char *cuix_clipboard(cui_ctx *ui); /* NULL when unavailable; valid until the next call */
+const char *cuix_clipboard(cui_ctx *ui); /* "" when unavailable; valid until the next call */
 
 #endif

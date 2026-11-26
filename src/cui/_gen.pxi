@@ -137,6 +137,15 @@ CURSOR_RESIZE_NS = 4
 CURSOR_MOVE = 5
 CURSOR_NOT_ALLOWED = 6
 CURSOR_COUNT = 7
+INPUT_MOUSE_MOVE = 0
+INPUT_MOUSE_BUTTON = 1
+INPUT_MOUSE_LEAVE = 2
+INPUT_SCROLL = 3
+INPUT_KEY = 4
+INPUT_TEXT = 5
+INPUT_FOCUS = 6
+INPUT_TOUCH = 7
+INPUT_TOUCH_MOVE = 8
 FONT_BODY = 0
 FONT_MEDIUM = 1
 FONT_DISPLAY = 2
@@ -213,6 +222,21 @@ TONE_VIOLET = 5
 TONE_TEAL = 6
 TONE_ROSE = 7
 TONE_ACCENT = 8
+SPINNER_ARC = 0
+SPINNER_COMET = 1
+SPINNER_DOT_MATRIX = 2
+SPINNER_FILL_DRAIN = 3
+SPINNER_RADAR = 4
+SPINNER_RIPPLE = 5
+SPINNER_UPLOAD = 6
+SPINNER_DOWNLOAD = 7
+SPINNER_TRANSFER = 8
+SPINNER_ORBIT = 9
+SPINNER_BOUNCE = 10
+SPINNER_SCAN = 11
+SPINNER_PULSE = 12
+SPINNER_SPIRAL = 13
+SPINNER_PLASMA = 14
 ANNOTATION_X = 0
 ANNOTATION_Y = 1
 ANNOTATION_POINT = 2
@@ -224,6 +248,9 @@ TREE_HAS_CHILDREN = 1
 TREE_OPEN = 2
 TREE_SELECTED = 4
 TREE_LOADING = 8
+TREE_DROP_BEFORE = 0
+TREE_DROP_INSIDE = 1
+TREE_DROP_AFTER = 2
 DIFF_SPLIT = 0
 DIFF_INLINE = 1
 DIFF_ROW_SAME = 0
@@ -234,6 +261,10 @@ DIFF_ROW_FOLD = 4
 DIFF_IGNORE_EOL = 1
 COMMENT_LIKE = 1
 COMMENT_REPLY = 2
+GAUGE_AUTO = 0
+GAUGE_ARC = 1
+GAUGE_SEGMENTS = 2
+GAUGE_RING = 3
 LOADER_DOTS = 0
 LOADER_BARS = 1
 LOADER_PULSE = 2
@@ -243,6 +274,7 @@ PLAYER_TOGGLE = 1
 PLAYER_PREV = 2
 PLAYER_NEXT = 4
 PLAYER_SEEK = 8
+PLAYER_SPEED = 16
 TASK_PENDING = 0
 TASK_RUNNING = 1
 TASK_DONE = 2
@@ -258,10 +290,25 @@ COMPOSER_STOP = 2
 COMPOSER_ATTACH = 4
 COMPOSER_REMOVE = 8
 COMPOSER_MODEL = 16
+COMPOSER_RECORD = 32
+COMPOSER_CANCEL = 64
+COMPOSER_VOICE = 128
 VOICE_IDLE = 0
 VOICE_LISTENING = 1
 VOICE_THINKING = 2
 VOICE_SPEAKING = 3
+VOICE_MUTED = 4
+VOICE_YOU = 0
+VOICE_REPLY = 1
+VOICE_SESSION_MUTE = 1
+VOICE_SESSION_END = 2
+GANTT_AUTO = 0
+GANTT_DONE = 1
+GANTT_ACTIVE = 2
+GANTT_PLANNED = 3
+TOOLBAR_PLAIN = 0
+TOOLBAR_GROUPED = 1
+TOOLBAR_FLOATING = 2
 LOG_TRACE = 0
 LOG_DEBUG = 1
 LOG_INFO = 2
@@ -272,6 +319,19 @@ CURVE_SMOOTH = 0
 CURVE_FREE = 1
 CURVE_LINEAR = 2
 CURVE_STEP = 3
+TAG_PENDING = 0
+TAG_IN_PROGRESS = 1
+TAG_SUBMITTED = 2
+TAG_IN_REVIEW = 3
+TAG_SUCCESS = 4
+TAG_FAILED = 5
+TAG_EXPIRED = 6
+TAG_CUSTOM = 7
+WELL_CHANGED = 1
+WELL_ACTION = 2
+GRADIENT_HUE = 0
+GRADIENT_TEMPERATURE = 1
+GRADIENT_OPACITY = 2
 TIMELINE_FRAMES = 0
 TIMELINE_SECONDS = 1
 TIMELINE_TIMECODE = 2
@@ -301,16 +361,38 @@ HTTP_HEAD = 5
 HTTP_OPTIONS = 6
 AXIS_NUMBER = 0
 AXIS_HOURS = 1
+FORMAT_ALIGN_LEFT = 0
+FORMAT_ALIGN_CENTER = 1
+FORMAT_ALIGN_RIGHT = 2
+FORMAT_ALIGN_JUSTIFY = 3
+FORMAT_LIST_NONE = 0
+FORMAT_LIST_BULLETS = 1
+FORMAT_LIST_NUMBERS = 2
+FORMAT_LIST_CHECKS = 3
+FORMAT_CHANGED = 1
+FORMAT_LINK = 2
+FORMAT_DELETE = 4
+FORMAT_MORE = 8
+CANVAS_ZOOMED = 1
+CANVAS_FIT = 2
+CANVAS_TOGGLED = 4
+SELECTION_NONE = -1
+SELECTION_CLEARED = -2
 SHADE_TEXT = 0
 SHADE_RRECT = 1
 SHADE_SHADOW = 2
 SHADE_IMAGE = 3
 SHADE_SOLID = 4
+SHADE_DITHER = 5
 SW_RGBA = 0
 SW_BGRA = 1
 RENDERER_AUTO = 0
 RENDERER_OPENGL = 1
 RENDERER_SOFTWARE = 2
+RENDERER_GPU = 3
+WINDOW_NORMAL = 0
+WINDOW_MAXIMIZED = 1
+WINDOW_MINIMIZED = 2
 FILE_OPEN = 0
 FILE_SAVE = 1
 FILE_FOLDER = 2
@@ -335,7 +417,7 @@ COLOR_INFO = Color(18, 0xC5, 0x1D, 0)
 COLOR_HOVER = Color(25, 0xC5, 0x1D, 0)
 COLOR_SCRIM = Color(27, 0xC5, 0x1D, 0)
 VERSION_MAJOR = 1
-VERSION_MINOR = 4
+VERSION_MINOR = 5
 VERSION_PATCH = 0
 REGEX_GROUPS = 10
 FLAG_ENVS = 8
@@ -509,8 +591,10 @@ ICON_RADIO = '\ue142'
 ICON_AUDIO_LINES = '\ue55a'
 
 
+Aspect = _record("Aspect", ['w', 'h', 'label'])
 CalEvent = _record("CalEvent", ['title', 'detail', 'day', 'start', 'end', 'tone'])
 Candle = _record("Candle", ['open', 'high', 'low', 'close', 'volume'])
+ChartAnnotation = _record("ChartAnnotation", ['kind', 'x', 'y', 'label', 'detail', 'accent', 'color'])
 CheckStep = _record("CheckStep", ['title', 'description', 'action', 'done'])
 Choice = _record("Choice", ['title', 'description', 'icon', 'badge'])
 CodeEditorResult = _record("CodeEditorResult", ['changed', 'refused', 'focused', 'cursor', 'anchor', 'line', 'column', 'line_count', 'length', 'bracket', 'bracket_match', 'find_matches', 'find_index'])
@@ -530,7 +614,8 @@ FilterField = _record("FilterField", ['name', 'icon', 'options'])
 FlameResult = _record("FlameResult", ['selection_changed', 'view_changed', 'hovered', 'zoomed'])
 FlameSpan = _record("FlameSpan", ['name', 'start', 'end', 'depth', 'color_key'])
 FlameView = _record("FlameView", ['start', 'end', 'scroll'])
-GanttTask = _record("GanttTask", ['name', 'owner', 'start', 'end', 'progress', 'tone', 'depends_on', 'milestone'])
+GanttTask = _record("GanttTask", ['name', 'owner', 'start', 'end', 'progress', 'tone', 'depends_on', 'milestone', 'state'])
+GaugeBand = _record("GaugeBand", ['to', 'tone', 'name'])
 GradientResult = _record("GradientResult", ['changed', 'added', 'removed', 'selected'])
 GradientStop = _record("GradientStop", ['pos', 'color'])
 GraphEdge = _record("GraphEdge", ['from_', 'to'])
@@ -542,7 +627,9 @@ KanbanMove = _record("KanbanMove", ['card', 'from_column', 'to_column', 'to_inde
 KeyCombo = _record("KeyCombo", ['mods', 'key'])
 KeymapBinding = _record("KeymapBinding", ['combo', 'action', 'category'])
 KeymapResult = _record("KeymapResult", ['clicked', 'conflicts'])
+LiveUser = _record("LiveUser", ['name', 'color', 'tone', 'x', 'y', 'says', 'speaking', 'away', 'avatar'])
 MarkdownResult = _record("MarkdownResult", ['link', 'hovered_link', 'task_offset', 'task_line', 'task_checked', 'height'])
+MeterPart = _record("MeterPart", ['name', 'value', 'color', 'density'])
 Model = _record("Model", ['name', 'detail', 'badge', 'icon'])
 MonthEvent = _record("MonthEvent", ['title', 'start', 'end', 'time', 'all_day', 'tone'])
 MonthResult = _record("MonthResult", ['event', 'day_clicked', 'day_activated', 'month_changed'])
@@ -561,6 +648,7 @@ RequestBarResult = _record("RequestBarResult", ['send', 'cancel', 'changed'])
 SankeyLink = _record("SankeyLink", ['from_', 'to', 'value'])
 ScatterSeries = _record("ScatterSeries", ['name', 'points', 'sizes', 'color'])
 ScheduleResult = _record("ScheduleResult", ['changed', 'valid', 'next'])
+SelectionAction = _record("SelectionAction", ['icon', 'label', 'tone'])
 Series = _record("Series", ['name', 'values', 'color'])
 Source = _record("Source", ['title', 'url', 'snippet'])
 SpeedAction = _record("SpeedAction", ['icon', 'label'])
@@ -569,23 +657,37 @@ StackTraceResult = _record("StackTraceResult", ['clicked'])
 SwipeAction = _record("SwipeAction", ['icon', 'label', 'tone'])
 TabBarItem = _record("TabBarItem", ['icon', 'label', 'badge'])
 TableColumn = _record("TableColumn", ['title', 'width', 'align', 'sortable'])
+TableSort = _record("TableSort", ['column', 'descending'])
 TerminalResult = _record("TerminalResult", ['command', 'interrupt'])
 TestExplorerResult = _record("TestExplorerResult", ['selected', 'activated', 'run', 'run_all', 'passed', 'failed', 'skipped', 'total'])
 TestItem = _record("TestItem", ['name', 'depth', 'status', 'duration', 'message'])
+TextFormat = _record("TextFormat", ['color', 'bold', 'underline', 'link', 'style', 'size', 'align', 'list'])
+TextMark = _record("TextMark", ['start', 'end', 'color'])
 TextMetrics = _record("TextMetrics", ['width', 'height', 'ascent', 'descent', 'line_height'])
+TextStyle = _record("TextStyle", ['name', 'size', 'preview_size', 'font'])
 TickerItem = _record("TickerItem", ['label', 'value', 'delta', 'lower_is_better'])
 TocItem = _record("TocItem", ['title', 'anchor', 'level'])
 TourStep = _record("TourStep", ['target', 'title', 'body', 'placement'])
-TraceResult = _record("TraceResult", ['selection_changed', 'view_changed', 'hovered'])
+TraceLink = _record("TraceLink", ['from_', 'to', 'tone', 'width', 'dashed'])
+TraceMarker = _record("TraceMarker", ['name', 'time', 'tone'])
+TraceResult = _record("TraceResult", ['selection_changed', 'view_changed', 'hovered', 'hovered_link'])
 TraceSpan = _record("TraceSpan", ['name', 'start', 'end', 'track', 'depth', 'color_key'])
 TraceTrack = _record("TraceTrack", ['name', 'collapsed'])
 TraceView = _record("TraceView", ['start', 'end', 'scroll', 'mark_start', 'mark_end'])
 TreeNode = _record("TreeNode", ['parent', 'first_child', 'next_sibling', 'flags'])
-TreeTableEvents = _record("TreeTableEvents", ['activated', 'expanded', 'collapsed', 'load_count', 'selection_changed', 'sort_changed'])
+TreeTableEvents = _record("TreeTableEvents", ['activated', 'expanded', 'collapsed', 'load_count', 'selection_changed', 'sort_changed', 'drop_count', 'drop_target', 'drop_where'])
 UptimeResult = _record("UptimeResult", ['service', 'day'])
 UptimeService = _record("UptimeService", ['name', 'days'])
 VizItem = _record("VizItem", ['label', 'value', 'color'])
+VoiceNote = _record("VoiceNote", ['levels', 'position', 'duration', 'speed', 'playing'])
 
+
+cdef int _fill_cui_aspect(cui_aspect *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('w', 'h', 'label'), "Aspect")
+    if t[0] is not None: v.w = <int>t[0]
+    if t[1] is not None: v.h = <int>t[1]
+    if t[2] is not None: v.label = _cstr(keep, t[2])
+    return 0
 
 cdef int _fill_cui_cal_event(cui_cal_event *v, object o, list keep) except -1:
     t = _record_tuple(o, ('title', 'detail', 'day', 'start', 'end', 'tone'), "CalEvent")
@@ -611,6 +713,17 @@ cdef cui_candle _to_cui_candle(object o) except *:
     memset(&v, 0, sizeof(v))
     _fill_cui_candle(&v, o, None)
     return v
+
+cdef int _fill_cui_chart_annotation(cui_chart_annotation *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('kind', 'x', 'y', 'label', 'detail', 'accent', 'color'), "ChartAnnotation")
+    if t[0] is not None: v.kind = <cui_annotation_kind><int>t[0]
+    if t[1] is not None: v.x = <double>t[1]
+    if t[2] is not None: v.y = <double>t[2]
+    if t[3] is not None: v.label = _cstr(keep, t[3])
+    if t[4] is not None: v.detail = _cstr(keep, t[4])
+    if t[5] is not None: v.accent = <cbool>bool(t[5])
+    if t[6] is not None: v.color = _to_cui_color(t[6])
+    return 0
 
 cdef int _fill_cui_check_step(cui_check_step *v, object o, list keep) except -1:
     t = _record_tuple(o, ('title', 'description', 'action', 'done'), "CheckStep")
@@ -732,7 +845,7 @@ cdef cui_flame_view _to_cui_flame_view(object o) except *:
     return v
 
 cdef int _fill_cui_gantt_task(cui_gantt_task *v, object o, list keep) except -1:
-    t = _record_tuple(o, ('name', 'owner', 'start', 'end', 'progress', 'tone', 'depends_on', 'milestone'), "GanttTask")
+    t = _record_tuple(o, ('name', 'owner', 'start', 'end', 'progress', 'tone', 'depends_on', 'milestone', 'state'), "GanttTask")
     if t[0] is not None: v.name = _cstr(keep, t[0])
     if t[1] is not None: v.owner = _cstr(keep, t[1])
     if t[2] is not None: v.start = <int>t[2]
@@ -741,6 +854,14 @@ cdef int _fill_cui_gantt_task(cui_gantt_task *v, object o, list keep) except -1:
     if t[5] is not None: v.tone = <cui_tone><int>t[5]
     if t[6] is not None: v.depends_on = <int>t[6]
     if t[7] is not None: v.milestone = <cbool>bool(t[7])
+    if t[8] is not None: v.state = <cui_gantt_state><int>t[8]
+    return 0
+
+cdef int _fill_cui_gauge_band(cui_gauge_band *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('to', 'tone', 'name'), "GaugeBand")
+    if t[0] is not None: v.to = <float>t[0]
+    if t[1] is not None: v.tone = <cui_tone><int>t[1]
+    if t[2] is not None: v.name = _cstr(keep, t[2])
     return 0
 
 cdef int _fill_cui_gradient_stop(cui_gradient_stop *v, object o, list keep) except -1:
@@ -814,6 +935,27 @@ cdef int _fill_cui_keymap_binding(cui_keymap_binding *v, object o, list keep) ex
     if t[0] is not None: v.combo = _to_cui_key_combo(t[0])
     if t[1] is not None: v.action = _cstr(keep, t[1])
     if t[2] is not None: v.category = <int>t[2]
+    return 0
+
+cdef int _fill_cui_live_user(cui_live_user *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('name', 'color', 'tone', 'x', 'y', 'says', 'speaking', 'away', 'avatar'), "LiveUser")
+    if t[0] is not None: v.name = _cstr(keep, t[0])
+    if t[1] is not None: v.color = _to_cui_color(t[1])
+    if t[2] is not None: v.tone = <cui_tone><int>t[2]
+    if t[3] is not None: v.x = <float>t[3]
+    if t[4] is not None: v.y = <float>t[4]
+    if t[5] is not None: v.says = _cstr(keep, t[5])
+    if t[6] is not None: v.speaking = <cbool>bool(t[6])
+    if t[7] is not None: v.away = <cbool>bool(t[7])
+    if t[8] is not None: v.avatar = <cui_texture>t[8]
+    return 0
+
+cdef int _fill_cui_meter_part(cui_meter_part *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('name', 'value', 'color', 'density'), "MeterPart")
+    if t[0] is not None: v.name = _cstr(keep, t[0])
+    if t[1] is not None: v.value = <float>t[1]
+    if t[2] is not None: v.color = _to_cui_color(t[2])
+    if t[3] is not None: v.density = <float>t[3]
     return 0
 
 cdef int _fill_cui_model(cui_model *v, object o, list keep) except -1:
@@ -931,6 +1073,13 @@ cdef int _fill_cui_scatter_series(cui_scatter_series *v, object o, list keep) ex
     if t[3] is not None: v.color = _to_cui_color(t[3])
     return 0
 
+cdef int _fill_cui_selection_action(cui_selection_action *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('icon', 'label', 'tone'), "SelectionAction")
+    if t[0] is not None: v.icon = _cstr(keep, t[0])
+    if t[1] is not None: v.label = _cstr(keep, t[1])
+    if t[2] is not None: v.tone = <cui_tone><int>t[2]
+    return 0
+
 cdef int _fill_cui_series(cui_series *v, object o, list keep) except -1:
     cdef _FloatArray a1
     t = _record_tuple(o, ('name', 'values', 'color'), "Series")
@@ -998,6 +1147,18 @@ cdef int _fill_cui_table_column(cui_table_column *v, object o, list keep) except
     if t[3] is not None: v.sortable = <cbool>bool(t[3])
     return 0
 
+cdef int _fill_cui_table_sort(cui_table_sort *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('column', 'descending'), "TableSort")
+    if t[0] is not None: v.column = <int>t[0]
+    if t[1] is not None: v.descending = <cbool>bool(t[1])
+    return 0
+
+cdef cui_table_sort _to_cui_table_sort(object o) except *:
+    cdef cui_table_sort v
+    memset(&v, 0, sizeof(v))
+    _fill_cui_table_sort(&v, o, None)
+    return v
+
 cdef int _fill_cui_test_item(cui_test_item *v, object o, list keep) except -1:
     t = _record_tuple(o, ('name', 'depth', 'status', 'duration', 'message'), "TestItem")
     if t[0] is not None: v.name = _cstr(keep, t[0])
@@ -1005,6 +1166,45 @@ cdef int _fill_cui_test_item(cui_test_item *v, object o, list keep) except -1:
     if t[2] is not None: v.status = <cui_job_status><int>t[2]
     if t[3] is not None: v.duration = <float>t[3]
     if t[4] is not None: v.message = _cstr(keep, t[4])
+    return 0
+
+cdef int _fill_cui_text_format(cui_text_format *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('color', 'bold', 'underline', 'link', 'style', 'size', 'align', 'list'), "TextFormat")
+    if t[0] is not None: v.color = <cui_tone><int>t[0]
+    if t[1] is not None: v.bold = <cbool>bool(t[1])
+    if t[2] is not None: v.underline = <cbool>bool(t[2])
+    if t[3] is not None: v.link = <cbool>bool(t[3])
+    if t[4] is not None: v.style = <int>t[4]
+    if t[5] is not None: v.size = <float>t[5]
+    if t[6] is not None: v.align = <cui_format_align><int>t[6]
+    if t[7] is not None: v.list = <cui_format_list><int>t[7]
+    return 0
+
+cdef cui_text_format _to_cui_text_format(object o) except *:
+    cdef cui_text_format v
+    memset(&v, 0, sizeof(v))
+    _fill_cui_text_format(&v, o, None)
+    return v
+
+cdef int _fill_cui_text_mark(cui_text_mark *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('start', 'end', 'color'), "TextMark")
+    if t[0] is not None: v.start = <int>t[0]
+    if t[1] is not None: v.end = <int>t[1]
+    if t[2] is not None: v.color = <int>t[2]
+    return 0
+
+cdef cui_text_mark _to_cui_text_mark(object o) except *:
+    cdef cui_text_mark v
+    memset(&v, 0, sizeof(v))
+    _fill_cui_text_mark(&v, o, None)
+    return v
+
+cdef int _fill_cui_text_style(cui_text_style *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('name', 'size', 'preview_size', 'font'), "TextStyle")
+    if t[0] is not None: v.name = _cstr(keep, t[0])
+    if t[1] is not None: v.size = <float>t[1]
+    if t[2] is not None: v.preview_size = <float>t[2]
+    if t[3] is not None: v.font = <cui_font>t[3]
     return 0
 
 cdef int _fill_cui_ticker_item(cui_ticker_item *v, object o, list keep) except -1:
@@ -1028,6 +1228,28 @@ cdef int _fill_cui_tour_step(cui_tour_step *v, object o, list keep) except -1:
     if t[1] is not None: v.title = _cstr(keep, t[1])
     if t[2] is not None: v.body = _cstr(keep, t[2])
     if t[3] is not None: v.placement = <cui_placement><int>t[3]
+    return 0
+
+cdef int _fill_cui_trace_link(cui_trace_link *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('from_', 'to', 'tone', 'width', 'dashed'), "TraceLink")
+    if t[0] is not None: v.from_ = <int>t[0]
+    if t[1] is not None: v.to = <int>t[1]
+    if t[2] is not None: v.tone = <cui_tone><int>t[2]
+    if t[3] is not None: v.width = <float>t[3]
+    if t[4] is not None: v.dashed = <cbool>bool(t[4])
+    return 0
+
+cdef cui_trace_link _to_cui_trace_link(object o) except *:
+    cdef cui_trace_link v
+    memset(&v, 0, sizeof(v))
+    _fill_cui_trace_link(&v, o, None)
+    return v
+
+cdef int _fill_cui_trace_marker(cui_trace_marker *v, object o, list keep) except -1:
+    t = _record_tuple(o, ('name', 'time', 'tone'), "TraceMarker")
+    if t[0] is not None: v.name = _cstr(keep, t[0])
+    if t[1] is not None: v.time = <double>t[1]
+    if t[2] is not None: v.tone = <cui_tone><int>t[2]
     return 0
 
 cdef int _fill_cui_trace_span(cui_trace_span *v, object o, list keep) except -1:
@@ -1093,6 +1315,22 @@ cdef int _fill_cui_viz_item(cui_viz_item *v, object o, list keep) except -1:
     if t[0] is not None: v.label = _cstr(keep, t[0])
     if t[1] is not None: v.value = <float>t[1]
     if t[2] is not None: v.color = _to_cui_color(t[2])
+    return 0
+
+cdef int _fill_cui_voice_note(cui_voice_note *v, object o, list keep) except -1:
+    cdef _FloatArray a0
+    t = _record_tuple(o, ('levels', 'position', 'duration', 'speed', 'playing'), "VoiceNote")
+    if t[0] is not None:
+        a0 = _FloatArray(t[0])
+        keep.append(a0)
+        if v.count and v.count != a0.n:
+            raise ValueError("cui_voice_note.levels and the other arrays need the same length")
+        v.levels = a0.ptr
+        v.count = <int>a0.n
+    if t[1] is not None: v.position = <float>t[1]
+    if t[2] is not None: v.duration = <float>t[2]
+    if t[3] is not None: v.speed = <float>t[3]
+    if t[4] is not None: v.playing = <cbool>bool(t[4])
     return 0
 
 cdef object _from_cui_cal_event(cui_cal_event v):
@@ -1237,6 +1475,7 @@ cdef object _from_cui_gantt_task(cui_gantt_task v):
         v.tone,
         v.depends_on,
         v.milestone,
+        v.state,
     )
 
 cdef object _from_cui_gradient_result(cui_gradient_result v):
@@ -1376,6 +1615,12 @@ cdef object _from_cui_stack_trace_result(cui_stack_trace_result v):
         v.clicked,
     )
 
+cdef object _from_cui_table_sort(cui_table_sort v):
+    return TableSort(
+        v.column,
+        v.descending,
+    )
+
 cdef object _from_cui_terminal_result(cui_terminal_result v):
     return TerminalResult(
         _str_or_none(v.command),
@@ -1394,6 +1639,18 @@ cdef object _from_cui_test_explorer_result(cui_test_explorer_result v):
         v.total,
     )
 
+cdef object _from_cui_text_format(cui_text_format v):
+    return TextFormat(
+        v.color,
+        v.bold,
+        v.underline,
+        v.link,
+        v.style,
+        v.size,
+        v.align,
+        v.list,
+    )
+
 cdef object _from_cui_text_metrics(cui_text_metrics v):
     return TextMetrics(
         v.width,
@@ -1408,6 +1665,7 @@ cdef object _from_cui_trace_result(cui_trace_result v):
         v.selection_changed,
         v.view_changed,
         v.hovered,
+        v.hovered_link,
     )
 
 cdef object _from_cui_trace_span(cui_trace_span v):
@@ -1451,6 +1709,9 @@ cdef object _from_cui_tree_table_events(cui_tree_table_events v):
         v.load_count,
         v.selection_changed,
         v.sort_changed,
+        v.drop_count,
+        v.drop_target,
+        v.drop_where,
     )
 
 cdef object _from_cui_uptime_result(cui_uptime_result v):
@@ -1458,6 +1719,25 @@ cdef object _from_cui_uptime_result(cui_uptime_result v):
         v.service,
         v.day,
     )
+
+cdef object _from_cui_voice_note(cui_voice_note v):
+    return VoiceNote(
+        ([v.levels[i] for i in range(v.count)] if v.levels != NULL else None),
+        v.position,
+        v.duration,
+        v.speed,
+        v.playing,
+    )
+
+cdef _Mem _arr_cui_aspect(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_aspect))
+    keep.append(m)
+    cdef cui_aspect *a = <cui_aspect *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_aspect(&a[i], seq[i], keep)
+    return m
 
 cdef _Mem _arr_cui_cal_event(object seq, list keep):
     seq = list(seq)
@@ -1483,6 +1763,16 @@ cdef _Mem _arr_cui_candle(object seq, list keep):
         _fill_cui_candle(&a[i], seq[i], keep)
     return m
 
+cdef _Mem _arr_cui_chart_annotation(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_chart_annotation))
+    keep.append(m)
+    cdef cui_chart_annotation *a = <cui_chart_annotation *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_chart_annotation(&a[i], seq[i], keep)
+    return m
+
 cdef _Mem _arr_cui_check_step(object seq, list keep):
     seq = list(seq)
     cdef _Mem m = _Mem(len(seq), sizeof(cui_check_step))
@@ -1506,6 +1796,20 @@ cdef _Mem _arr_cui_choice(object seq, list keep):
     for i in range(m.n):
         _fill_cui_choice(&a[i], seq[i], keep)
     return m
+
+cdef _Mem _arr_cui_color(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_color))
+    keep.append(m)
+    cdef cui_color *a = <cui_color *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        a[i] = _to_cui_color(seq[i])
+    return m
+
+cdef list _list_cui_color(_Mem m):
+    cdef cui_color *a = <cui_color *>m.ptr
+    return [_from_cui_color(a[i]) for i in range(m.n)]
 
 cdef _Mem _arr_cui_command(object seq, list keep):
     seq = list(seq)
@@ -1599,6 +1903,16 @@ cdef list _list_cui_gantt_task(_Mem m):
     cdef cui_gantt_task *a = <cui_gantt_task *>m.ptr
     return [_from_cui_gantt_task(a[i]) for i in range(m.n)]
 
+cdef _Mem _arr_cui_gauge_band(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_gauge_band))
+    keep.append(m)
+    cdef cui_gauge_band *a = <cui_gauge_band *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_gauge_band(&a[i], seq[i], keep)
+    return m
+
 cdef _Mem _arr_cui_gradient_stop(object seq, list keep):
     seq = list(seq)
     cdef _Mem m = _Mem(len(seq), sizeof(cui_gradient_stop))
@@ -1653,6 +1967,26 @@ cdef _Mem _arr_cui_keymap_binding(object seq, list keep):
         _fill_cui_keymap_binding(&a[i], seq[i], keep)
     return m
 
+cdef _Mem _arr_cui_live_user(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_live_user))
+    keep.append(m)
+    cdef cui_live_user *a = <cui_live_user *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_live_user(&a[i], seq[i], keep)
+    return m
+
+cdef _Mem _arr_cui_meter_part(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_meter_part))
+    keep.append(m)
+    cdef cui_meter_part *a = <cui_meter_part *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_meter_part(&a[i], seq[i], keep)
+    return m
+
 cdef _Mem _arr_cui_model(object seq, list keep):
     seq = list(seq)
     cdef _Mem m = _Mem(len(seq), sizeof(cui_model))
@@ -1672,6 +2006,20 @@ cdef _Mem _arr_cui_month_event(object seq, list keep):
     for i in range(m.n):
         _fill_cui_month_event(&a[i], seq[i], keep)
     return m
+
+cdef _Mem _arr_cui_node_view(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_node_view))
+    keep.append(m)
+    cdef cui_node_view *a = <cui_node_view *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_node_view(&a[i], seq[i], keep)
+    return m
+
+cdef list _list_cui_node_view(_Mem m):
+    cdef cui_node_view *a = <cui_node_view *>m.ptr
+    return [_from_cui_node_view(a[i]) for i in range(m.n)]
 
 cdef _Mem _arr_cui_now_playing(object seq, list keep):
     seq = list(seq)
@@ -1761,6 +2109,16 @@ cdef _Mem _arr_cui_scatter_series(object seq, list keep):
         _fill_cui_scatter_series(&a[i], seq[i], keep)
     return m
 
+cdef _Mem _arr_cui_selection_action(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_selection_action))
+    keep.append(m)
+    cdef cui_selection_action *a = <cui_selection_action *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_selection_action(&a[i], seq[i], keep)
+    return m
+
 cdef _Mem _arr_cui_series(object seq, list keep):
     seq = list(seq)
     cdef _Mem m = _Mem(len(seq), sizeof(cui_series))
@@ -1841,6 +2199,26 @@ cdef _Mem _arr_cui_test_item(object seq, list keep):
         _fill_cui_test_item(&a[i], seq[i], keep)
     return m
 
+cdef _Mem _arr_cui_text_mark(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_text_mark))
+    keep.append(m)
+    cdef cui_text_mark *a = <cui_text_mark *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_text_mark(&a[i], seq[i], keep)
+    return m
+
+cdef _Mem _arr_cui_text_style(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_text_style))
+    keep.append(m)
+    cdef cui_text_style *a = <cui_text_style *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_text_style(&a[i], seq[i], keep)
+    return m
+
 cdef _Mem _arr_cui_ticker_item(object seq, list keep):
     seq = list(seq)
     cdef _Mem m = _Mem(len(seq), sizeof(cui_ticker_item))
@@ -1869,6 +2247,26 @@ cdef _Mem _arr_cui_tour_step(object seq, list keep):
     cdef Py_ssize_t i
     for i in range(m.n):
         _fill_cui_tour_step(&a[i], seq[i], keep)
+    return m
+
+cdef _Mem _arr_cui_trace_link(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_trace_link))
+    keep.append(m)
+    cdef cui_trace_link *a = <cui_trace_link *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_trace_link(&a[i], seq[i], keep)
+    return m
+
+cdef _Mem _arr_cui_trace_marker(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_trace_marker))
+    keep.append(m)
+    cdef cui_trace_marker *a = <cui_trace_marker *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_trace_marker(&a[i], seq[i], keep)
     return m
 
 cdef _Mem _arr_cui_trace_span(object seq, list keep):
@@ -1946,6 +2344,68 @@ cdef _Mem _arr_cui_viz_item(object seq, list keep):
     for i in range(m.n):
         _fill_cui_viz_item(&a[i], seq[i], keep)
     return m
+
+cdef _Mem _arr_cui_voice_note(object seq, list keep):
+    seq = list(seq)
+    cdef _Mem m = _Mem(len(seq), sizeof(cui_voice_note))
+    keep.append(m)
+    cdef cui_voice_note *a = <cui_voice_note *>m.ptr
+    cdef Py_ssize_t i
+    for i in range(m.n):
+        _fill_cui_voice_note(&a[i], seq[i], keep)
+    return m
+
+cdef list _list_cui_voice_note(_Mem m):
+    cdef cui_voice_note *a = <cui_voice_note *>m.ptr
+    return [_from_cui_voice_note(a[i]) for i in range(m.n)]
+
+cdef object _refget_cbool(const void *p, Py_ssize_t i):
+    return bool((<const cbool *>p)[i])
+
+cdef int _refset_cbool(void *p, Py_ssize_t i, object v) except -1:
+    (<cbool *>p)[i] = <cbool>bool(v)
+    return 0
+
+
+cdef object _refget_cui_color(const void *p, Py_ssize_t i):
+    return _from_cui_color((<const cui_color *>p)[i])
+
+cdef int _refset_cui_color(void *p, Py_ssize_t i, object v) except -1:
+    (<cui_color *>p)[i] = _to_cui_color(v)
+    return 0
+
+
+cdef object _refget_cui_date(const void *p, Py_ssize_t i):
+    return _from_cui_date((<const cui_date *>p)[i])
+
+cdef int _refset_cui_date(void *p, Py_ssize_t i, object v) except -1:
+    (<cui_date *>p)[i] = _to_cui_date(v)
+    return 0
+
+
+cdef object _refget_cui_table_sort(const void *p, Py_ssize_t i):
+    return _from_cui_table_sort((<const cui_table_sort *>p)[i])
+
+cdef int _refset_cui_table_sort(void *p, Py_ssize_t i, object v) except -1:
+    (<cui_table_sort *>p)[i] = _to_cui_table_sort(v)
+    return 0
+
+
+cdef object _refget_float(const void *p, Py_ssize_t i):
+    return (<const float *>p)[i]
+
+cdef int _refset_float(void *p, Py_ssize_t i, object v) except -1:
+    (<float *>p)[i] = <float>v
+    return 0
+
+
+cdef object _refget_int(const void *p, Py_ssize_t i):
+    return (<const int *>p)[i]
+
+cdef int _refset_int(void *p, Py_ssize_t i, object v) except -1:
+    (<int *>p)[i] = <int>v
+    return 0
+
 
 
 
@@ -2447,6 +2907,32 @@ cdef class ExpandableCardScope:
     @property
     def open(self):
         return self.c_open
+
+cdef class FocusScopeScope:
+    """Scope for `cui_push_focus_scope` ... `cui_pop_focus_scope`."""
+    cdef _ContextBase ctx
+    cdef bint entered
+    cdef bint began
+    cdef readonly object value
+    cdef readonly object result
+    cdef cui_id c_id
+    cdef cbool c_active
+    def __enter__(self):
+        if self.entered: raise RuntimeError("a scope can be entered once")
+        self.ctx._need_frame()
+        self.entered = True
+        cui_push_focus_scope(self.ctx.ui, self.c_id, self.c_active)
+        self.began = True
+        if self.began: self.ctx._open_scopes += 1
+        return self
+    def __exit__(self, *exc):
+        if not self.began: return False
+        self.began = False
+        self.ctx._open_scopes -= 1
+        cui_pop_focus_scope(self.ctx.ui)
+        return False
+    def __bool__(self):
+        return True
 
 cdef class HoverCardScope:
     """Scope for `cui_hover_card_begin` ... `cui_hover_card_end`."""
@@ -3004,6 +3490,31 @@ cdef class SheetScope:
     def open(self):
         return self.c_open
 
+cdef class SkeletonGroupScope:
+    """Scope for `cui_skeleton_group_begin_ex` ... `cui_skeleton_group_end`."""
+    cdef _ContextBase ctx
+    cdef bint entered
+    cdef bint began
+    cdef readonly object value
+    cdef readonly object result
+    cdef cui_skeleton_group_opts c_opts
+    def __enter__(self):
+        if self.entered: raise RuntimeError("a scope can be entered once")
+        self.ctx._need_frame()
+        self.entered = True
+        cui_skeleton_group_begin_ex(self.ctx.ui, &self.c_opts)
+        self.began = True
+        if self.began: self.ctx._open_scopes += 1
+        return self
+    def __exit__(self, *exc):
+        if not self.began: return False
+        self.began = False
+        self.ctx._open_scopes -= 1
+        cui_skeleton_group_end(self.ctx.ui)
+        return False
+    def __bool__(self):
+        return True
+
 cdef class SplitScope:
     """Scope for `cui_split_begin` ... `cui_split_end`."""
     cdef _ContextBase ctx
@@ -3171,6 +3682,30 @@ cdef class ToolbarScope:
     def __bool__(self):
         return True
 
+cdef class ToolbarGroupScope:
+    """Scope for `cui_toolbar_group_begin` ... `cui_toolbar_group_end`."""
+    cdef _ContextBase ctx
+    cdef bint entered
+    cdef bint began
+    cdef readonly object value
+    cdef readonly object result
+    def __enter__(self):
+        if self.entered: raise RuntimeError("a scope can be entered once")
+        self.ctx._need_frame()
+        self.entered = True
+        cui_toolbar_group_begin(self.ctx.ui)
+        self.began = True
+        if self.began: self.ctx._open_scopes += 1
+        return self
+    def __exit__(self, *exc):
+        if not self.began: return False
+        self.began = False
+        self.ctx._open_scopes -= 1
+        cui_toolbar_group_end(self.ctx.ui)
+        return False
+    def __bool__(self):
+        return True
+
 cdef class TreeScope:
     """Scope for `cui_tree_begin` ... `cui_tree_end`."""
     cdef _ContextBase ctx
@@ -3236,6 +3771,36 @@ cdef class TreeTableScope:
     def nodes(self):
         return _list_cui_tree_node(self.c_nodes)
 
+cdef class TreeTableMenuScope:
+    """Scope for `cui_tree_table_menu_begin` ... `cui_tree_table_menu_end`."""
+    cdef _ContextBase ctx
+    cdef bint entered
+    cdef bint began
+    cdef readonly object value
+    cdef readonly object result
+    cdef const char * c_id
+    cdef int c_node
+    def __enter__(self):
+        if self.entered: raise RuntimeError("a scope can be entered once")
+        self.ctx._need_frame()
+        self.entered = True
+        cdef cbool r = cui_tree_table_menu_begin(self.ctx.ui, self.c_id, &self.c_node)
+        self.value = r
+        self.began = <bint>r
+        if self.began: self.ctx._open_scopes += 1
+        return self
+    def __exit__(self, *exc):
+        if not self.began: return False
+        self.began = False
+        self.ctx._open_scopes -= 1
+        cui_tree_table_menu_end(self.ctx.ui)
+        return False
+    def __bool__(self):
+        return bool(self.value)
+    @property
+    def node(self):
+        return self.c_node
+
 cdef class UserMenuScope:
     """Scope for `cui_user_menu_begin` ... `cui_user_menu_end`."""
     cdef _ContextBase ctx
@@ -3262,6 +3827,37 @@ cdef class UserMenuScope:
         return False
     def __bool__(self):
         return bool(self.value)
+
+cdef class VeilScope:
+    """Scope for `cui_veil_begin_ex` ... `cui_veil_end`."""
+    cdef _ContextBase ctx
+    cdef bint entered
+    cdef bint began
+    cdef readonly object value
+    cdef readonly object result
+    cdef const char * c_id
+    cdef cbool c_revealed
+    cdef cui_veil_opts c_opts
+    def __enter__(self):
+        if self.entered: raise RuntimeError("a scope can be entered once")
+        self.ctx._need_frame()
+        self.entered = True
+        cdef cbool r = cui_veil_begin_ex(self.ctx.ui, self.c_id, &self.c_revealed, &self.c_opts)
+        self.value = r
+        self.began = True
+        if self.began: self.ctx._open_scopes += 1
+        return self
+    def __exit__(self, *exc):
+        if not self.began: return False
+        self.began = False
+        self.ctx._open_scopes -= 1
+        cui_veil_end(self.ctx.ui)
+        return False
+    def __bool__(self):
+        return bool(self.value)
+    @property
+    def revealed(self):
+        return self.c_revealed
 
 cdef class VirtualListScope:
     """Scope for `cui_virtual_list_begin` ... `cui_virtual_list_end`."""
@@ -3484,7 +4080,8 @@ cdef class _GenContext(_ContextBase):
         s.c_id = _cstr(self._keep, id)
         return s
 
-    def data_grid(self, str id not None, columns, row_count, *, width=None, height=None, row_height=None, striped=None, hide_checkboxes=None):
+    def data_grid(self, str id not None, columns, row_count, *, width=None, height=None, row_height=None, selected=None, sort=None, striped=None, cursor=None, hide_checkboxes=None, anchor=None):
+        """Returns a visible range for the current row count, even after the grid shrinks."""
         self._need_frame()
         cdef DataGridScope s = DataGridScope.__new__(DataGridScope)
         s.ctx = self
@@ -3498,13 +4095,19 @@ cdef class _GenContext(_ContextBase):
         if width is not None: s.c_opts.width = _to_cui_size(width)
         if height is not None: s.c_opts.height = _to_cui_size(height)
         if row_height is not None: s.c_opts.row_height = <float>row_height
+        if sort is not None: s.c_opts.sort = <cui_table_sort *>_ref_bind(sort, self._keep, self, "cui_table_sort", sizeof(cui_table_sort), _refget_cui_table_sort, _refset_cui_table_sort, -1)
         if striped is not None: s.c_opts.striped = <cbool>bool(striped)
+        if cursor is not None: s.c_opts.cursor = <int *>_ref_bind(cursor, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         if hide_checkboxes is not None: s.c_opts.hide_checkboxes = <cbool>bool(hide_checkboxes)
+        if anchor is not None: s.c_opts.anchor = <int *>_ref_bind(anchor, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         s.c_column_count = <int>s.c_columns.n
+        if selected is not None:
+            s.c_opts.selected = <cbool *>_ref_bind(selected, self._keep, self, "cbool", sizeof(cbool), _refget_cbool, _refset_cbool, (<long long>s.c_row_count))
         return s
 
-    def dialog(self, str title not None, open, *, description=None, width=None, no_close_button=None, persistent=None):
-        """Modal dialog. Shown while *open is true; closing sets it to false."""
+    def dialog(self, str title not None, open, *, description=None, width=None, no_close_button=None, persistent=None, draggable=None, resizable=None):
+        """Modal dialog. Shown while *open is true; closing sets it to false.
+Escape leaves a focused text field before it can dismiss the dialog."""
         self._need_frame()
         cdef DialogScope s = DialogScope.__new__(DialogScope)
         s.ctx = self
@@ -3516,6 +4119,8 @@ cdef class _GenContext(_ContextBase):
         if width is not None: s.c_opts.width = <float>width
         if no_close_button is not None: s.c_opts.no_close_button = <cbool>bool(no_close_button)
         if persistent is not None: s.c_opts.persistent = <cbool>bool(persistent)
+        if draggable is not None: s.c_opts.draggable = <cbool>bool(draggable)
+        if resizable is not None: s.c_opts.resizable = <cbool>bool(resizable)
         return s
 
     def dialog_footer(self):
@@ -3584,6 +4189,19 @@ cdef class _GenContext(_ContextBase):
         if icon is not None: s.c_opts.icon = _cstr(self._keep, icon)
         if badge is not None: s.c_opts.badge = _cstr(self._keep, badge)
         if badge_tone is not None: s.c_opts.badge_tone = <cui_tone><int>badge_tone
+        return s
+
+    def focus_scope(self, id, active):
+        """Restrict Tab / Shift+Tab navigation to widgets built inside the active scope
+(for example, the focused pane in a multi-pane workspace). An inactive scope
+and its descendants remain clickable but outside the Tab order. With no active
+scope, Tab visits unscoped controls. An open modal takes precedence."""
+        self._need_frame()
+        cdef FocusScopeScope s = FocusScopeScope.__new__(FocusScopeScope)
+        s.ctx = self
+        self._keep.append(s)
+        s.c_id = <cui_id>id
+        s.c_active = <cbool>bool(active)
         return s
 
     def hover_card(self, str id not None, *, placement=None, width=None, delay=None):
@@ -3671,13 +4289,14 @@ cdef class _GenContext(_ContextBase):
         if no_border is not None: s.c_opts.no_border = <cbool>bool(no_border)
         return s
 
-    def menu_bar_menu(self, str label not None, *, width=None, disabled=None):
+    def menu_bar_menu(self, str label not None, *, mnemonic=None, width=None, disabled=None):
         self._need_frame()
         cdef MenuBarMenuScope s = MenuBarMenuScope.__new__(MenuBarMenuScope)
         s.ctx = self
         self._keep.append(s)
         s.c_label = _cstr(self._keep, label)
         memset(&s.c_opts, 0, sizeof(s.c_opts))
+        if mnemonic is not None: s.c_opts.mnemonic = _ascii_char(mnemonic)
         if width is not None: s.c_opts.width = <float>width
         if disabled is not None: s.c_opts.disabled = <cbool>bool(disabled)
         return s
@@ -3852,6 +4471,17 @@ Returns true on the frame the order changes."""
         if description is not None: s.c_opts.description = _cstr(self._keep, description)
         return s
 
+    def skeleton_group(self, *, dither=None, width=None, gap=None):
+        self._need_frame()
+        cdef SkeletonGroupScope s = SkeletonGroupScope.__new__(SkeletonGroupScope)
+        s.ctx = self
+        self._keep.append(s)
+        memset(&s.c_opts, 0, sizeof(s.c_opts))
+        if dither is not None: s.c_opts.dither = <cbool>bool(dither)
+        if width is not None: s.c_opts.width = _to_cui_size(width)
+        if gap is not None: s.c_opts.gap = <float>gap
+        return s
+
     def split(self, str id not None, ratio, *, vertical=None, min_first=None, min_second=None, width=None, height=None):
         self._need_frame()
         cdef SplitScope s = SplitScope.__new__(SplitScope)
@@ -3904,7 +4534,7 @@ Returns true on the frame the order changes."""
         s.c_right_count = <int>s.c_right.n
         return s
 
-    def table(self, str id not None, columns, *, height=None, striped=None, compact=None, selectable=None):
+    def table(self, str id not None, columns, *, sort=None, height=None, striped=None, compact=None, selectable=None):
         self._need_frame()
         cdef TableScope s = TableScope.__new__(TableScope)
         s.ctx = self
@@ -3912,6 +4542,7 @@ Returns true on the frame the order changes."""
         s.c_id = _cstr(self._keep, id)
         s.c_columns = _arr_cui_table_column(columns, self._keep)
         memset(&s.c_opts, 0, sizeof(s.c_opts))
+        if sort is not None: s.c_opts.sort = <cui_table_sort *>_ref_bind(sort, self._keep, self, "cui_table_sort", sizeof(cui_table_sort), _refget_cui_table_sort, _refset_cui_table_sort, -1)
         if height is not None: s.c_opts.height = _to_cui_size(height)
         if striped is not None: s.c_opts.striped = <cbool>bool(striped)
         if compact is not None: s.c_opts.compact = <cbool>bool(compact)
@@ -3919,7 +4550,7 @@ Returns true on the frame the order changes."""
         s.c_column_count = <int>s.c_columns.n
         return s
 
-    def toolbar(self, str id not None, *, no_border=None):
+    def toolbar(self, str id not None, *, no_border=None, style=None):
         self._need_frame()
         cdef ToolbarScope s = ToolbarScope.__new__(ToolbarScope)
         s.ctx = self
@@ -3927,6 +4558,15 @@ Returns true on the frame the order changes."""
         s.c_id = _cstr(self._keep, id)
         memset(&s.c_opts, 0, sizeof(s.c_opts))
         if no_border is not None: s.c_opts.no_border = <cbool>bool(no_border)
+        if style is not None: s.c_opts.style = <cui_toolbar_style><int>style
+        return s
+
+    def toolbar_group(self):
+        """A group of items: a raised well in the grouped style, set apart by separators in the others."""
+        self._need_frame()
+        cdef ToolbarGroupScope s = ToolbarGroupScope.__new__(ToolbarGroupScope)
+        s.ctx = self
+        self._keep.append(s)
         return s
 
     def tree(self, str label not None, open, *, icon=None, leaf=None, selected=None):
@@ -3942,7 +4582,7 @@ Returns true on the frame the order changes."""
         if selected is not None: s.c_opts.selected = <cbool>bool(selected)
         return s
 
-    def tree_table(self, str id not None, columns, nodes, *, width=None, height=None, row_height=None, root=None, guides=None):
+    def tree_table(self, str id not None, columns, nodes, *, width=None, height=None, row_height=None, root=None, sort=None, cursor=None, guides=None, draggable=None):
         self._need_frame()
         cdef TreeTableScope s = TreeTableScope.__new__(TreeTableScope)
         s.ctx = self
@@ -3955,9 +4595,24 @@ Returns true on the frame the order changes."""
         if height is not None: s.c_opts.height = _to_cui_size(height)
         if row_height is not None: s.c_opts.row_height = <float>row_height
         if root is not None: s.c_opts.root = <int>root
+        if sort is not None: s.c_opts.sort = <cui_table_sort *>_ref_bind(sort, self._keep, self, "cui_table_sort", sizeof(cui_table_sort), _refget_cui_table_sort, _refset_cui_table_sort, -1)
+        if cursor is not None: s.c_opts.cursor = <int *>_ref_bind(cursor, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         if guides is not None: s.c_opts.guides = <cbool>bool(guides)
+        if draggable is not None: s.c_opts.draggable = <cbool>bool(draggable)
         s.c_column_count = <int>s.c_columns.n
         s.c_node_count = <int>s.c_nodes.n
+        return s
+
+    def tree_table_menu(self, str id not None, node):
+        """The context menu of table `id` (after cui_tree_table_end): true while it
+is open, with the node it was opened for in *node; fill it with
+cui_menu_item and friends, then call cui_tree_table_menu_end."""
+        self._need_frame()
+        cdef TreeTableMenuScope s = TreeTableMenuScope.__new__(TreeTableMenuScope)
+        s.ctx = self
+        self._keep.append(s)
+        s.c_id = _cstr(self._keep, id)
+        s.c_node = <int>node
         return s
 
     def user_menu(self, str name not None, *, detail=None, status=None, avatar=None, compact=None, placement=None, width=None):
@@ -3975,9 +4630,25 @@ Returns true on the frame the order changes."""
         if width is not None: s.c_opts.width = <float>width
         return s
 
+    def veil(self, str id not None, revealed, *, label=None, hint=None, toggle=None, radius=None, color=None, width=None):
+        self._need_frame()
+        cdef VeilScope s = VeilScope.__new__(VeilScope)
+        s.ctx = self
+        self._keep.append(s)
+        s.c_id = _cstr(self._keep, id)
+        s.c_revealed = <cbool>bool(revealed)
+        memset(&s.c_opts, 0, sizeof(s.c_opts))
+        if label is not None: s.c_opts.label = _cstr(self._keep, label)
+        if hint is not None: s.c_opts.hint = _cstr(self._keep, hint)
+        if toggle is not None: s.c_opts.toggle = <cbool>bool(toggle)
+        if radius is not None: s.c_opts.radius = <float>radius
+        if color is not None: s.c_opts.color = _to_cui_color(color)
+        if width is not None: s.c_opts.width = _to_cui_size(width)
+        return s
+
     def virtual_list(self, str id not None, count, row_height, height):
         """Virtual list: only the visible rows are built, so lists with a million
-rows stay fast. Fills first/last with the visible range."""
+rows stay fast. Fills first/last with the visible range for this row count."""
         self._need_frame()
         cdef VirtualListScope s = VirtualListScope.__new__(VirtualListScope)
         s.ctx = self
@@ -4055,8 +4726,22 @@ of redrawing continuously."""
         cdef uint64_t r = cui_frame_count(self.ui)
         return r
 
-    def input_mouse_move(self, x, y):
+    def input_repeated(self):
+        """Valid inside route: whether this key-down repeats a physical held key."""
         self._need_alive()
+        cdef cbool r = cui_input_repeated(self.ui)
+        return r
+
+    def key_action_down(self, key):
+        """Held state eligible for default actions. cui_key_down remains physical state."""
+        self._need_alive()
+        cdef cui_key c_key
+        c_key = <cui_key><int>key
+        cdef cbool r = cui_key_action_down(self.ui, c_key)
+        return r
+
+    def input_mouse_move(self, x, y):
+        self._need_input()
         cdef float c_x
         cdef float c_y
         c_x = <float>x
@@ -4064,7 +4749,7 @@ of redrawing continuously."""
         cui_input_mouse_move(self.ui, c_x, c_y)
 
     def input_mouse_button(self, button, down):
-        self._need_alive()
+        self._need_input()
         cdef cui_mouse_button c_button
         cdef cbool c_down
         c_button = <cui_mouse_button><int>button
@@ -4072,11 +4757,11 @@ of redrawing continuously."""
         cui_input_mouse_button(self.ui, c_button, c_down)
 
     def input_mouse_leave(self):
-        self._need_alive()
+        self._need_input()
         cui_input_mouse_leave(self.ui)
 
     def input_scroll(self, dx, dy):
-        self._need_alive()
+        self._need_input()
         cdef float c_dx
         cdef float c_dy
         c_dx = <float>dx
@@ -4084,7 +4769,7 @@ of redrawing continuously."""
         cui_input_scroll(self.ui, c_dx, c_dy)
 
     def input_key(self, key, down, mods):
-        self._need_alive()
+        self._need_input()
         cdef cui_key c_key
         cdef cbool c_down
         cdef int c_mods
@@ -4094,21 +4779,86 @@ of redrawing continuously."""
         cui_input_key(self.ui, c_key, c_down, c_mods)
 
     def input_text(self, str utf8 not None):
-        self._need_alive()
+        self._need_input()
         cdef const char * c_utf8
         c_utf8 = _cstr(self._keep, utf8)
         cui_input_text(self.ui, c_utf8)
 
     def input_focus(self, window_focused):
-        self._need_alive()
+        self._need_input()
         cdef cbool c_window_focused
         c_window_focused = <cbool>bool(window_focused)
         cui_input_focus(self.ui, c_window_focused)
 
+    def input_touch(self, finger, down, x, y):
+        self._need_input()
+        cdef int c_finger
+        cdef cbool c_down
+        cdef float c_x
+        cdef float c_y
+        c_finger = <int>finger
+        c_down = <cbool>bool(down)
+        c_x = <float>x
+        c_y = <float>y
+        cui_input_touch(self.ui, c_finger, c_down, c_x, c_y)
+
+    def input_touch_move(self, finger, x, y):
+        self._need_input()
+        cdef int c_finger
+        cdef float c_x
+        cdef float c_y
+        c_finger = <int>finger
+        c_x = <float>x
+        c_y = <float>y
+        cui_input_touch_move(self.ui, c_finger, c_x, c_y)
+
+    def input_touch_cancel(self, finger):
+        self._need_input()
+        cdef int c_finger
+        c_finger = <int>finger
+        cui_input_touch_cancel(self.ui, c_finger)
+
+    def touch_count(self):
+        """Touches this frame: count, per-finger state and position; finger -1 reads
+the first active touch (the one that landed earliest), and on the frame the
+last finger lifts, that finger. A finger that lifted this frame keeps its
+last position in cui_touch_pos for that frame, so a tap can be placed."""
+        self._need_frame()
+        cdef int r = cui_touch_count(self.ui)
+        return r
+
+    def touch_down(self, finger):
+        self._need_frame()
+        cdef int c_finger
+        c_finger = <int>finger
+        cdef cbool r = cui_touch_down(self.ui, c_finger)
+        return r
+
+    def touch_pressed(self, finger):
+        self._need_frame()
+        cdef int c_finger
+        c_finger = <int>finger
+        cdef cbool r = cui_touch_pressed(self.ui, c_finger)
+        return r
+
+    def touch_released(self, finger):
+        self._need_frame()
+        cdef int c_finger
+        c_finger = <int>finger
+        cdef cbool r = cui_touch_released(self.ui, c_finger)
+        return r
+
+    def touch_pos(self, finger):
+        self._need_frame()
+        cdef int c_finger
+        c_finger = <int>finger
+        cdef cui_vec2 r = cui_touch_pos(self.ui, c_finger)
+        return _from_cui_vec2(r)
+
     def input_file_hover(self, hovering, x, y):
         """Files dragged from the OS: hover while a drag is over the window (where the
 platform reports it), then the drop itself. Paths are UTF-8 and copied."""
-        self._need_alive()
+        self._need_input()
         cdef cbool c_hovering
         cdef float c_x
         cdef float c_y
@@ -4118,7 +4868,7 @@ platform reports it), then the drop itself. Paths are UTF-8 and copied."""
         cui_input_file_hover(self.ui, c_hovering, c_x, c_y)
 
     def input_file_drop(self, paths, x, y):
-        self._need_alive()
+        self._need_input()
         cdef _StrArray c_paths
         cdef int c_count
         cdef float c_x
@@ -4148,21 +4898,45 @@ platform reports it), then the drop itself. Paths are UTF-8 and copied."""
         cdef cbool r = cui_file_drag_active(self.ui)
         return r
 
+    def set_cursor(self, cursor):
+        """Request a cursor during component submission or painting. The last request
+wins. At end of frame the platform hook receives it; the next frame starts
+with CUI_CURSOR_ARROW."""
+        self._need_alive()
+        cdef cui_cursor c_cursor
+        c_cursor = <cui_cursor><int>cursor
+        cui_set_cursor(self.ui, c_cursor)
+
     def get_cursor(self):
         self._need_alive()
         cdef cui_cursor r = cui_get_cursor(self.ui)
         return r
 
+    def set_clipboard_text(self, str text not None):
+        """The system clipboard, for a menu or status bar item that copies or pastes ("Copy path").
+They go through the platform's clipboard hooks, as the copy button and text fields do:
+without a hook, setting does nothing and getting returns "". The returned text stays
+valid until the next call."""
+        self._need_alive()
+        cdef const char * c_text
+        c_text = _cstr(self._keep, text)
+        cui_set_clipboard_text(self.ui, c_text)
+
+    def get_clipboard_text(self):
+        self._need_alive()
+        cdef const char * r = cui_get_clipboard_text(self.ui)
+        return _str_or_none(r)
+
     def key_pressed(self, key):
         """Queries, useful for app level shortcuts."""
-        self._need_frame()
+        self._need_alive()
         cdef cui_key c_key
         c_key = <cui_key><int>key
         cdef cbool r = cui_key_pressed(self.ui, c_key)
         return r
 
     def key_down(self, key):
-        self._need_frame()
+        self._need_alive()
         cdef cui_key c_key
         c_key = <cui_key><int>key
         cdef cbool r = cui_key_down(self.ui, c_key)
@@ -4178,7 +4952,7 @@ platform reports it), then the drop itself. Paths are UTF-8 and copied."""
         return r
 
     def key_mods(self):
-        self._need_frame()
+        self._need_alive()
         cdef int r = cui_key_mods(self.ui)
         return r
 
@@ -4317,6 +5091,18 @@ are unsupported; the shaper implements an experimental OpenType subset."""
         c_scroll_id = _cstr(self._keep, scroll_id)
         c_y = <float>y
         cui_scroll_to(self.ui, c_scroll_id, c_y)
+
+    def scroll_reveal(self, str scroll_id not None, row):
+        """Scrolls the area the least that shows `row` (any id from cui_box_begin, cui_last_id or
+cui_make_id), comparing both rectangles from the latest layout: nothing when the row is
+wholly in view or either rectangle is not known yet, else just enough to show its clipped
+edge; a row taller than the view gets its top at the top. For keyboard selection in a list."""
+        self._need_frame()
+        cdef const char * c_scroll_id
+        cdef cui_id c_row
+        c_scroll_id = _cstr(self._keep, scroll_id)
+        c_row = <cui_id>row
+        cui_scroll_reveal(self.ui, c_scroll_id, c_row)
 
     def split_next(self):
         self._need_frame()
@@ -4483,7 +5269,7 @@ Identity
         cdef cbool r = cui_icon_button_ex(self.ui, c_icon, &c_opts)
         return r
 
-    def segmented(self, str id not None, items, index, *, size=None, full_width=None):
+    def segmented(self, str id not None, items, index, *, size=None, full_width=None, icons=None):
         self._need_frame()
         cdef const char * c_id
         cdef _StrArray c_items
@@ -4498,6 +5284,11 @@ Identity
         if size is not None: c_opts.size = <cui_control_size><int>size
         if full_width is not None: c_opts.full_width = <cbool>bool(full_width)
         c_count = <int>c_items.n
+        if icons is not None:
+            _a = _StrArray(icons)
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"icons needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.icons = <const char * const *>(<_StrArray>_a).ptr
         cdef cbool r = cui_segmented_ex(self.ui, c_id, c_items.ptr, c_count, &c_index, &c_opts)
         return (r, c_index)
 
@@ -4581,6 +5372,8 @@ Identity
         return (r, c_value)
 
     def range_slider(self, str label not None, lo, hi, min, max):
+        """Range slider with two non-crossing thumbs. Tab focuses the range, Space
+selects the other thumb, and the slider keys adjust the focused thumb."""
         self._need_frame()
         cdef const char * c_label
         cdef float c_lo
@@ -4621,7 +5414,7 @@ Identity
 
     def input(self, str id not None, TextBuffer buf not None, *, label=None, placeholder=None, icon=None, hint=None, error=None, password=None, disabled=None, clearable=None, autofocus=None, read_only=None, size=None, width=None, height=None, prefix=None, suffix=None):
         """Single line text field. Returns CUI_CHANGED / CUI_SUBMITTED (Enter) flags."""
-        self._need_alive()
+        self._need_input()
         cdef const char * c_id
         cdef TextBuffer b_buf
         cdef cui_input_opts c_opts
@@ -4648,7 +5441,8 @@ Identity
         return r
 
     def textarea(self, str id not None, TextBuffer buf not None, *, label=None, placeholder=None, icon=None, hint=None, error=None, password=None, disabled=None, clearable=None, autofocus=None, read_only=None, size=None, width=None, height=None, prefix=None, suffix=None):
-        """Multi-line text area with word wrap."""
+        """Multi-line text area with word wrap. The wheel scrolls the text first and
+goes to the enclosing scroll view at the text area's edges."""
         self._need_frame()
         cdef const char * c_id
         cdef TextBuffer b_buf
@@ -4704,6 +5498,8 @@ Identity
         return r
 
     def number(self, str id not None, value, min, max, *, label=None, step=None, decimals=None, disabled=None, width=None, suffix=None):
+        """A bounded number field. Only complete finite drafts update the value.
+Enter or loss of focus shows the accepted value using opts.decimals."""
         self._need_frame()
         cdef const char * c_id
         cdef double c_value
@@ -4724,7 +5520,9 @@ Identity
         cdef cbool r = cui_number_ex(self.ui, c_id, &c_value, c_min, c_max, &c_opts)
         return (r, c_value)
 
-    def select(self, str id not None, items, index, *, label=None, placeholder=None, searchable=None, disabled=None, width=None):
+    def select(self, str id not None, items, index, *, label=None, placeholder=None, icons=None, searchable=None, disabled=None, width=None):
+        """Enter opens the list or picks the highlighted item. A searchable select
+returns focus to its trigger when its list closes."""
         self._need_frame()
         cdef const char * c_id
         cdef _StrArray c_items
@@ -4742,6 +5540,11 @@ Identity
         if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
         if width is not None: c_opts.width = _to_cui_size(width)
         c_count = <int>c_items.n
+        if icons is not None:
+            _a = _StrArray(icons)
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"icons needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.icons = <const char * const *>(<_StrArray>_a).ptr
         cdef cbool r = cui_select_ex(self.ui, c_id, c_items.ptr, c_count, &c_index, &c_opts)
         return (r, c_index)
 
@@ -4777,7 +5580,7 @@ Identity
         cdef cbool r = cui_color_picker(self.ui, c_id, &c_value)
         return (r, _from_cui_color(c_value))
 
-    def tabs(self, str id not None, items, index, *, variant=None, full_width=None):
+    def tabs(self, str id not None, items, index, *, variant=None, icons=None, full_width=None):
         self._need_frame()
         cdef const char * c_id
         cdef _StrArray c_items
@@ -4792,6 +5595,11 @@ Identity
         if variant is not None: c_opts.variant = <cui_tabs_variant><int>variant
         if full_width is not None: c_opts.full_width = <cbool>bool(full_width)
         c_count = <int>c_items.n
+        if icons is not None:
+            _a = _StrArray(icons)
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"icons needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.icons = <const char * const *>(<_StrArray>_a).ptr
         cdef cbool r = cui_tabs_ex(self.ui, c_id, c_items.ptr, c_count, &c_index, &c_opts)
         return (r, c_index)
 
@@ -4815,6 +5623,7 @@ Identity
         cui_nav_section(self.ui, c_title)
 
     def breadcrumb(self, items):
+        """Ancestor links, which show keyboard focus. Returns the clicked index or -1."""
         self._need_frame()
         cdef _StrArray c_items
         cdef int c_count
@@ -4825,6 +5634,8 @@ Identity
         return r
 
     def pagination(self, str id not None, page, page_count):
+        """Page buttons, which show keyboard focus; page is 0 based. The compact layout is
+chosen from the parent's inner width."""
         self._need_frame()
         cdef const char * c_id
         cdef int c_page
@@ -4836,6 +5647,7 @@ Identity
         return (r, c_page)
 
     def stepper(self, steps, current):
+        """Process steps; labels collapse to fit the width of their own row."""
         self._need_frame()
         cdef _StrArray c_steps
         cdef int c_count
@@ -4894,7 +5706,7 @@ Identity
         cdef cbool r = cui_popover_is_open(self.ui, c_id)
         return r
 
-    def menu_item(self, str label not None, *, icon=None, shortcut=None, danger=None, disabled=None, checked=None):
+    def menu_item(self, str label not None, *, icon=None, shortcut=None, danger=None, disabled=None, checked=None, font=None, text_size=None):
         self._need_frame()
         cdef const char * c_label
         cdef cui_menu_item_opts c_opts
@@ -4905,6 +5717,8 @@ Identity
         if danger is not None: c_opts.danger = <cbool>bool(danger)
         if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
         if checked is not None: c_opts.checked = <cbool>bool(checked)
+        if font is not None: c_opts.font = <cui_font>font
+        if text_size is not None: c_opts.text_size = <float>text_size
         cdef cbool r = cui_menu_item_ex(self.ui, c_label, &c_opts)
         return r
 
@@ -4919,7 +5733,8 @@ Identity
         cui_menu_label(self.ui, c_text)
 
     def tooltip(self, str text not None):
-        """Tooltip for the previous component, shown after a short hover delay."""
+        """Tooltip for the previous component. The first hover waits for the delay,
+measured in elapsed time even when the app sleeps between frames."""
         self._need_frame()
         cdef const char * c_text
         c_text = _cstr(self._keep, text)
@@ -4927,7 +5742,7 @@ Identity
 
     def toast(self, str title not None, *, description=None, tone=None, duration=None, action=None, show_timer=None):
         """Queue a toast. Returns a handle; cui_toast_action_clicked(handle) tells
-whether its action button was pressed."""
+whether its action button was pressed before the toast started closing."""
         self._need_frame()
         cdef const char * c_title
         cdef cui_toast_opts c_opts
@@ -4968,7 +5783,7 @@ whether its action button was pressed."""
         cdef cbool r = cui_alert_ex(self.ui, c_title, &c_opts)
         return r
 
-    def progress(self, value, *, indeterminate=None, tone=None, height=None, label=None, show_value=None, width=None):
+    def progress(self, value, *, indeterminate=None, tone=None, height=None, label=None, show_value=None, width=None, dither=None):
         self._need_frame()
         cdef float c_value
         cdef cui_progress_opts c_opts
@@ -4980,13 +5795,20 @@ whether its action button was pressed."""
         if label is not None: c_opts.label = _cstr(self._keep, label)
         if show_value is not None: c_opts.show_value = <cbool>bool(show_value)
         if width is not None: c_opts.width = _to_cui_size(width)
+        if dither is not None: c_opts.dither = <cbool>bool(dither)
         cui_progress_ex(self.ui, c_value, &c_opts)
 
-    def spinner(self, size):
+    def spinner(self, size, *, style=None, color=None, track=None):
+        """most styles are square; upload and download are 25/32 as wide as tall, transfer 50/32, bounce 40/28, scan 28/32"""
         self._need_frame()
         cdef float c_size
+        cdef cui_spinner_opts c_opts
         c_size = <float>size
-        cui_spinner(self.ui, c_size)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if style is not None: c_opts.style = <cui_spinner_style><int>style
+        if color is not None: c_opts.color = _to_cui_color(color)
+        if track is not None: c_opts.track = _to_cui_color(track)
+        cui_spinner_ex(self.ui, c_size, &c_opts)
 
     def skeleton(self, width, height):
         self._need_frame()
@@ -5047,7 +5869,7 @@ whether its action button was pressed."""
         cdef cbool r = cui_empty_state_ex(self.ui, c_title, &c_opts)
         return r
 
-    def metric(self, str label not None, str value not None, *, delta=None, delta_label=None, spark_count=None, icon=None, width=None, lower_is_better=None):
+    def metric(self, str label not None, str value not None, *, delta=None, delta_label=None, spark=None, icon=None, width=None, lower_is_better=None):
         self._need_frame()
         cdef const char * c_label
         cdef const char * c_value
@@ -5057,10 +5879,14 @@ whether its action button was pressed."""
         memset(&c_opts, 0, sizeof(c_opts))
         if delta is not None: c_opts.delta = <float>delta
         if delta_label is not None: c_opts.delta_label = _cstr(self._keep, delta_label)
-        if spark_count is not None: c_opts.spark_count = <int>spark_count
         if icon is not None: c_opts.icon = _cstr(self._keep, icon)
         if width is not None: c_opts.width = _to_cui_size(width)
         if lower_is_better is not None: c_opts.lower_is_better = <cbool>bool(lower_is_better)
+        if spark is not None:
+            _a = _FloatArray(spark)
+            self._keep.append(_a)
+            c_opts.spark_count = <int>_a.n
+            if _a.n: c_opts.spark = <const float *>(<_FloatArray>_a).ptr
         cui_metric_ex(self.ui, c_label, c_value, &c_opts)
 
     def meter(self, str label not None, used, total, str unit not None):
@@ -5113,7 +5939,7 @@ whether its action button was pressed."""
         c_text = _cstr(self._keep, text)
         cui_table_cell_text(self.ui, c_text)
 
-    def line_chart(self, str id not None, series, *, width=None, height=None, label_count=None, area=None, no_grid=None, no_legend=None, stacked=None, smooth=None, format=None, min=None, max=None, annotation_count=None):
+    def line_chart(self, str id not None, series, *, width=None, height=None, labels=None, area=None, no_grid=None, no_legend=None, stacked=None, smooth=None, format=None, min=None, max=None, annotations=None, dither=None, x_min=None, x_max=None):
         self._need_frame()
         cdef const char * c_id
         cdef _Mem c_series
@@ -5124,7 +5950,6 @@ whether its action button was pressed."""
         memset(&c_opts, 0, sizeof(c_opts))
         if width is not None: c_opts.width = _to_cui_size(width)
         if height is not None: c_opts.height = <float>height
-        if label_count is not None: c_opts.label_count = <int>label_count
         if area is not None: c_opts.area = <cbool>bool(area)
         if no_grid is not None: c_opts.no_grid = <cbool>bool(no_grid)
         if no_legend is not None: c_opts.no_legend = <cbool>bool(no_legend)
@@ -5133,11 +5958,22 @@ whether its action button was pressed."""
         if format is not None: c_opts.format = _cstr(self._keep, format)
         if min is not None: c_opts.min = <float>min
         if max is not None: c_opts.max = <float>max
-        if annotation_count is not None: c_opts.annotation_count = <int>annotation_count
+        if dither is not None: c_opts.dither = <cbool>bool(dither)
+        if x_min is not None: c_opts.x_min = <double>x_min
+        if x_max is not None: c_opts.x_max = <double>x_max
         c_count = <int>c_series.n
+        if labels is not None:
+            _a = _StrArray(labels)
+            self._keep.append(_a)
+            c_opts.label_count = <int>_a.n
+            if _a.n: c_opts.labels = <const char * const *>(<_StrArray>_a).ptr
+        if annotations is not None:
+            _a = _arr_cui_chart_annotation(annotations, self._keep)
+            c_opts.annotation_count = <int>_a.n
+            if _a.n: c_opts.annotations = <const cui_chart_annotation *>(<_Mem>_a).ptr
         cui_line_chart_ex(self.ui, c_id, <cui_series *>c_series.ptr, c_count, &c_opts)
 
-    def bar_chart(self, str id not None, series, *, width=None, height=None, label_count=None, area=None, no_grid=None, no_legend=None, stacked=None, smooth=None, format=None, min=None, max=None, annotation_count=None):
+    def bar_chart(self, str id not None, series, *, width=None, height=None, labels=None, area=None, no_grid=None, no_legend=None, stacked=None, smooth=None, format=None, min=None, max=None, annotations=None, dither=None, x_min=None, x_max=None):
         self._need_frame()
         cdef const char * c_id
         cdef _Mem c_series
@@ -5148,7 +5984,6 @@ whether its action button was pressed."""
         memset(&c_opts, 0, sizeof(c_opts))
         if width is not None: c_opts.width = _to_cui_size(width)
         if height is not None: c_opts.height = <float>height
-        if label_count is not None: c_opts.label_count = <int>label_count
         if area is not None: c_opts.area = <cbool>bool(area)
         if no_grid is not None: c_opts.no_grid = <cbool>bool(no_grid)
         if no_legend is not None: c_opts.no_legend = <cbool>bool(no_legend)
@@ -5157,11 +5992,22 @@ whether its action button was pressed."""
         if format is not None: c_opts.format = _cstr(self._keep, format)
         if min is not None: c_opts.min = <float>min
         if max is not None: c_opts.max = <float>max
-        if annotation_count is not None: c_opts.annotation_count = <int>annotation_count
+        if dither is not None: c_opts.dither = <cbool>bool(dither)
+        if x_min is not None: c_opts.x_min = <double>x_min
+        if x_max is not None: c_opts.x_max = <double>x_max
         c_count = <int>c_series.n
+        if labels is not None:
+            _a = _StrArray(labels)
+            self._keep.append(_a)
+            c_opts.label_count = <int>_a.n
+            if _a.n: c_opts.labels = <const char * const *>(<_StrArray>_a).ptr
+        if annotations is not None:
+            _a = _arr_cui_chart_annotation(annotations, self._keep)
+            c_opts.annotation_count = <int>_a.n
+            if _a.n: c_opts.annotations = <const cui_chart_annotation *>(<_Mem>_a).ptr
         cui_bar_chart_ex(self.ui, c_id, <cui_series *>c_series.ptr, c_count, &c_opts)
 
-    def donut_chart(self, str id not None, values, labels, *, width=None, height=None, label_count=None, area=None, no_grid=None, no_legend=None, stacked=None, smooth=None, format=None, min=None, max=None, annotation_count=None):
+    def donut_chart(self, str id not None, values, labels, *, width=None, height=None, labels_=None, area=None, no_grid=None, no_legend=None, stacked=None, smooth=None, format=None, min=None, max=None, annotations=None, dither=None, x_min=None, x_max=None):
         self._need_frame()
         cdef const char * c_id
         cdef _FloatArray c_values
@@ -5176,7 +6022,6 @@ whether its action button was pressed."""
         memset(&c_opts, 0, sizeof(c_opts))
         if width is not None: c_opts.width = _to_cui_size(width)
         if height is not None: c_opts.height = <float>height
-        if label_count is not None: c_opts.label_count = <int>label_count
         if area is not None: c_opts.area = <cbool>bool(area)
         if no_grid is not None: c_opts.no_grid = <cbool>bool(no_grid)
         if no_legend is not None: c_opts.no_legend = <cbool>bool(no_legend)
@@ -5185,9 +6030,20 @@ whether its action button was pressed."""
         if format is not None: c_opts.format = _cstr(self._keep, format)
         if min is not None: c_opts.min = <float>min
         if max is not None: c_opts.max = <float>max
-        if annotation_count is not None: c_opts.annotation_count = <int>annotation_count
+        if dither is not None: c_opts.dither = <cbool>bool(dither)
+        if x_min is not None: c_opts.x_min = <double>x_min
+        if x_max is not None: c_opts.x_max = <double>x_max
         c_count = <int>c_values.n
         if c_labels.n != c_values.n: raise ValueError("labels and values must have the same length")
+        if labels_ is not None:
+            _a = _StrArray(labels_)
+            self._keep.append(_a)
+            c_opts.label_count = <int>_a.n
+            if _a.n: c_opts.labels = <const char * const *>(<_StrArray>_a).ptr
+        if annotations is not None:
+            _a = _arr_cui_chart_annotation(annotations, self._keep)
+            c_opts.annotation_count = <int>_a.n
+            if _a.n: c_opts.annotations = <const cui_chart_annotation *>(<_Mem>_a).ptr
         cui_donut_chart_ex(self.ui, c_id, c_values.ptr, c_labels.ptr, c_count, &c_opts)
 
     def sparkline(self, values, width, height, color):
@@ -5215,22 +6071,27 @@ whether its action button was pressed."""
         c_size = <float>size
         cui_gauge(self.ui, c_label, c_value, c_size)
 
-    def image_load(self, str path not None):
-        self._need_alive()
-        cdef const char * c_path
-        cdef int c_w
-        cdef int c_h
-        c_path = _cstr(self._keep, path)
-        c_w = 0
-        c_h = 0
-        cdef cui_texture r = cui_image_load(self.ui, c_path, &c_w, &c_h)
-        return (r, c_w, c_h)
-
-    def image_destroy(self, tex):
-        self._need_alive()
-        cdef cui_texture c_tex
-        c_tex = <cui_texture>tex
-        cui_image_destroy(self.ui, c_tex)
+    def pattern_meter(self, str id not None, parts, *, total=None, label=None, unit=None, format=None, free_label=None, grayscale=None, no_legend=None, height=None, width=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef _Mem c_parts
+        cdef int c_count
+        cdef cui_pattern_meter_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_parts = _arr_cui_meter_part(parts, self._keep)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if total is not None: c_opts.total = <float>total
+        if label is not None: c_opts.label = _cstr(self._keep, label)
+        if unit is not None: c_opts.unit = _cstr(self._keep, unit)
+        if format is not None: c_opts.format = _cstr(self._keep, format)
+        if free_label is not None: c_opts.free_label = _cstr(self._keep, free_label)
+        if grayscale is not None: c_opts.grayscale = <cbool>bool(grayscale)
+        if no_legend is not None: c_opts.no_legend = <cbool>bool(no_legend)
+        if height is not None: c_opts.height = <float>height
+        if width is not None: c_opts.width = _to_cui_size(width)
+        c_count = <int>c_parts.n
+        cdef int r = cui_pattern_meter_ex(self.ui, c_id, <cui_meter_part *>c_parts.ptr, c_count, &c_opts)
+        return r
 
     def image(self, tex, *, width=None, height=None, radius=None, tint=None):
         self._need_frame()
@@ -5320,6 +6181,7 @@ or -1. Open it with a shortcut: if (cui_shortcut(ui, CUI_MOD_PRIMARY, CUI_KEY_K)
         return (r, c_index)
 
     def tag_input(self, str id not None, TextBuffer buf not None, *, label=None, placeholder=None, max_tags=None, width=None):
+        """max_tags applies to every tag, including a batch separated by commas."""
         self._need_frame()
         cdef const char * c_id
         cdef TextBuffer b_buf
@@ -5390,7 +6252,7 @@ Keyboard focus stays on the button when the check appears or disappears."""
         c_size = <float>size
         cui_progress_ring(self.ui, c_label, c_value, c_size)
 
-    def split_button(self, str label not None, items, *, variant=None, size=None, icon=None, disabled=None):
+    def split_button(self, str label not None, items, *, variant=None, size=None, icon=None, item_icons=None, disabled=None):
         self._need_frame()
         cdef const char * c_label
         cdef _StrArray c_items
@@ -5405,10 +6267,15 @@ Keyboard focus stays on the button when the check appears or disappears."""
         if icon is not None: c_opts.icon = _cstr(self._keep, icon)
         if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
         c_count = <int>c_items.n
+        if item_icons is not None:
+            _a = _StrArray(item_icons)
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"item_icons needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.item_icons = <const char * const *>(<_StrArray>_a).ptr
         cdef int r = cui_split_button_ex(self.ui, c_label, c_items.ptr, c_count, &c_opts)
         return r
 
-    def toggle_group(self, str id not None, labels, values, *, exclusive=None, icon_only=None, size=None):
+    def toggle_group(self, str id not None, labels, values, *, icons=None, exclusive=None, icon_only=None, size=None):
         self._need_frame()
         cdef const char * c_id
         cdef _StrArray c_labels
@@ -5426,6 +6293,11 @@ Keyboard focus stays on the button when the check appears or disappears."""
         if size is not None: c_opts.size = <cui_control_size><int>size
         c_count = <int>c_labels.n
         if c_values.n != c_labels.n: raise ValueError("values and labels must have the same length")
+        if icons is not None:
+            _a = _StrArray(icons)
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"icons needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.icons = <const char * const *>(<_StrArray>_a).ptr
         cdef cbool r = cui_toggle_group_ex(self.ui, c_id, c_labels.ptr, c_count, <cbool *>c_values.ptr, &c_opts)
         return (r, c_values.tolist())
 
@@ -5458,6 +6330,20 @@ Keyboard focus stays on the button when the check appears or disappears."""
         if variant is not None: c_opts.variant = <cui_button_variant><int>variant
         if size is not None: c_opts.size = <cui_control_size><int>size
         cdef cbool r = cui_status_button_ex(self.ui, c_label, c_status, &c_opts)
+        return r
+
+    def status_spinner(self, str id not None, status, *, size=None, color=None, keep=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef cui_status c_status
+        cdef cui_status_spinner_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_status = <cui_status><int>status
+        memset(&c_opts, 0, sizeof(c_opts))
+        if size is not None: c_opts.size = <float>size
+        if color is not None: c_opts.color = _to_cui_color(color)
+        if keep is not None: c_opts.keep = <cbool>bool(keep)
+        cdef cbool r = cui_status_spinner_ex(self.ui, c_id, c_status, &c_opts)
         return r
 
     def reactions(self, str id not None, items):
@@ -5620,7 +6506,7 @@ cells: cui_tree_table_name first, then cui_data_grid_cell(_text)."""
         cdef cui_path_bar_result r = cui_path_bar_ex(self.ui, c_id, c_segments.ptr, c_count, &c_opts)
         return _from_cui_path_bar_result(r)
 
-    def file_browser(self, str id not None, TextBuffer path not None, *, width=None, height=None, filter=None, folders_only=None, hidden=None, no_places=None, place_count=None, max_entries=None):
+    def file_browser(self, str id not None, TextBuffer path not None, *, width=None, height=None, filter=None, folders_only=None, hidden=None, no_places=None, places=None, max_entries=None):
         """path: the folder shown, yours; the browser writes it as you move around."""
         self._need_frame()
         cdef const char * c_id
@@ -5636,8 +6522,12 @@ cells: cui_tree_table_name first, then cui_data_grid_cell(_text)."""
         if folders_only is not None: c_opts.folders_only = <cbool>bool(folders_only)
         if hidden is not None: c_opts.hidden = <cbool>bool(hidden)
         if no_places is not None: c_opts.no_places = <cbool>bool(no_places)
-        if place_count is not None: c_opts.place_count = <int>place_count
         if max_entries is not None: c_opts.max_entries = <int>max_entries
+        if places is not None:
+            _a = _StrArray(places)
+            self._keep.append(_a)
+            c_opts.place_count = <int>_a.n
+            if _a.n: c_opts.places = <const char * const *>(<_StrArray>_a).ptr
         cdef cui_file_browser_result r = cui_file_browser_ex(self.ui, c_id, b_path.data, b_path.cap, &c_opts)
         return _from_cui_file_browser_result(r)
 
@@ -5713,7 +6603,7 @@ cells: cui_tree_table_name first, then cui_data_grid_cell(_text)."""
         cdef cui_markdown_result r = cui_markdown_ex(self.ui, c_id, c_text, &c_opts)
         return _from_cui_markdown_result(r)
 
-    def code_editor(self, str id not None, TextBuffer buf not None, *, lang=None, width=None, height=None, size=None, tab_size=None, use_tabs=None, read_only=None, no_line_numbers=None, autofocus=None, placeholder=None, mark_count=None):
+    def code_editor(self, str id not None, TextBuffer buf not None, *, lang=None, width=None, height=None, size=None, tab_size=None, use_tabs=None, read_only=None, no_line_numbers=None, autofocus=None, placeholder=None, marks=None):
         self._need_frame()
         cdef const char * c_id
         cdef TextBuffer b_buf
@@ -5732,7 +6622,10 @@ cells: cui_tree_table_name first, then cui_data_grid_cell(_text)."""
         if no_line_numbers is not None: c_opts.no_line_numbers = <cbool>bool(no_line_numbers)
         if autofocus is not None: c_opts.autofocus = <cbool>bool(autofocus)
         if placeholder is not None: c_opts.placeholder = _cstr(self._keep, placeholder)
-        if mark_count is not None: c_opts.mark_count = <int>mark_count
+        if marks is not None:
+            _a = _arr_cui_text_mark(marks, self._keep)
+            c_opts.mark_count = <int>_a.n
+            if _a.n: c_opts.marks = <const cui_text_mark *>(<_Mem>_a).ptr
         cdef cui_code_editor_result r = cui_code_editor_ex(self.ui, c_id, b_buf.data, b_buf.cap, &c_opts)
         return _from_cui_code_editor_result(r)
 
@@ -5768,7 +6661,7 @@ focus the editor and scroll there. Call from the same id scope."""
         c_query = _cstr(self._keep, query)
         cui_code_editor_find(self.ui, c_id, c_query)
 
-    def diff_view(self, str id not None, str old_text not None, str new_text not None, *, mode=None, language=None, old_title=None, new_title=None, context=None, no_fold=None, ignore_eol=None, split_min_width=None, width=None, height=None, size=None):
+    def diff_view(self, str id not None, str old_text not None, str new_text not None, *, mode=None, language=None, old_title=None, new_title=None, current=None, context=None, no_fold=None, ignore_eol=None, split_min_width=None, width=None, height=None, size=None):
         self._need_frame()
         cdef const char * c_id
         cdef const char * c_old_text
@@ -5782,6 +6675,7 @@ focus the editor and scroll there. Call from the same id scope."""
         if language is not None: c_opts.language = _cstr(self._keep, language)
         if old_title is not None: c_opts.old_title = _cstr(self._keep, old_title)
         if new_title is not None: c_opts.new_title = _cstr(self._keep, new_title)
+        if current is not None: c_opts.current = <int *>_ref_bind(current, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         if context is not None: c_opts.context = <int>context
         if no_fold is not None: c_opts.no_fold = <cbool>bool(no_fold)
         if ignore_eol is not None: c_opts.ignore_eol = <cbool>bool(ignore_eol)
@@ -5820,7 +6714,7 @@ focus the editor and scroll there. Call from the same id scope."""
         c_name = _cstr(self._keep, name)
         cui_typing_indicator(self.ui, c_name)
 
-    def comment(self, str id not None, str author not None, str text not None, *, time=None, depth=None, edited=None, badge=None):
+    def comment(self, str id not None, str author not None, str text not None, *, time=None, depth=None, likes=None, liked=None, edited=None, badge=None):
         self._need_frame()
         cdef const char * c_id
         cdef const char * c_author
@@ -5832,6 +6726,8 @@ focus the editor and scroll there. Call from the same id scope."""
         memset(&c_opts, 0, sizeof(c_opts))
         if time is not None: c_opts.time = _cstr(self._keep, time)
         if depth is not None: c_opts.depth = <int>depth
+        if likes is not None: c_opts.likes = <int *>_ref_bind(likes, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
+        if liked is not None: c_opts.liked = <cbool *>_ref_bind(liked, self._keep, self, "cbool", sizeof(cbool), _refget_cbool, _refset_cbool, -1)
         if edited is not None: c_opts.edited = <cbool>bool(edited)
         if badge is not None: c_opts.badge = _cstr(self._keep, badge)
         cdef int r = cui_comment_ex(self.ui, c_id, c_author, c_text, &c_opts)
@@ -5920,7 +6816,7 @@ focus the editor and scroll there. Call from the same id scope."""
         cdef int r = cui_calendar_heatmap_ex(self.ui, c_id, c_start, c_values.ptr, c_days, &c_opts)
         return r
 
-    def treemap(self, str id not None, items, *, width=None, height=None, format=None):
+    def treemap(self, str id not None, items, *, width=None, height=None, format=None, selected=None):
         self._need_frame()
         cdef const char * c_id
         cdef _Mem c_items
@@ -5932,6 +6828,7 @@ focus the editor and scroll there. Call from the same id scope."""
         if width is not None: c_opts.width = _to_cui_size(width)
         if height is not None: c_opts.height = <float>height
         if format is not None: c_opts.format = _cstr(self._keep, format)
+        if selected is not None: c_opts.selected = <int *>_ref_bind(selected, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         c_count = <int>c_items.n
         cdef int r = cui_treemap_ex(self.ui, c_id, <cui_viz_item *>c_items.ptr, c_count, &c_opts)
         return r
@@ -5975,7 +6872,8 @@ focus the editor and scroll there. Call from the same id scope."""
         cdef int r = cui_funnel_ex(self.ui, c_id, <cui_viz_item *>c_stages.ptr, c_count, &c_opts)
         return r
 
-    def sankey(self, str id not None, nodes, links, *, width=None, height=None, format=None, node_width=None):
+    def sankey(self, str id not None, nodes, links, *, width=None, height=None, format=None, node_width=None, node_colors=None):
+        """Returns the clicked node index, node_count + the clicked input link index, or -1."""
         self._need_frame()
         cdef const char * c_id
         cdef _StrArray c_nodes
@@ -5994,6 +6892,10 @@ focus the editor and scroll there. Call from the same id scope."""
         if node_width is not None: c_opts.node_width = <float>node_width
         c_node_count = <int>c_nodes.n
         c_link_count = <int>c_links.n
+        if node_colors is not None:
+            _a = _arr_cui_color(node_colors, self._keep)
+            if _a.n != (<long long>c_node_count): raise ValueError(f"node_colors needs {(<long long>c_node_count)} items, got {_a.n}")
+            if _a.n: c_opts.node_colors = <const cui_color *>(<_Mem>_a).ptr
         cdef int r = cui_sankey_ex(self.ui, c_id, c_nodes.ptr, c_node_count, <cui_sankey_link *>c_links.ptr, c_link_count, &c_opts)
         return r
 
@@ -6087,7 +6989,7 @@ focus the editor and scroll there. Call from the same id scope."""
         cdef int r = cui_scatter_chart_ex(self.ui, c_id, <cui_scatter_series *>c_series.ptr, c_count, &c_opts)
         return r
 
-    def radial_gauge(self, str id not None, value, min, max, *, label=None, format=None, unit=None, size=None, sweep=None, band_count=None, ticks=None, target=None, show_target=None, no_needle=None):
+    def radial_gauge(self, str id not None, value, min, max, *, label=None, format=None, unit=None, size=None, sweep=None, bands=None, ticks=None, target=None, show_target=None, no_needle=None, style=None, detail=None, color=None):
         self._need_frame()
         cdef const char * c_id
         cdef float c_value
@@ -6104,14 +7006,20 @@ focus the editor and scroll there. Call from the same id scope."""
         if unit is not None: c_opts.unit = _cstr(self._keep, unit)
         if size is not None: c_opts.size = <float>size
         if sweep is not None: c_opts.sweep = <float>sweep
-        if band_count is not None: c_opts.band_count = <int>band_count
         if ticks is not None: c_opts.ticks = <int>ticks
         if target is not None: c_opts.target = <float>target
         if show_target is not None: c_opts.show_target = <cbool>bool(show_target)
         if no_needle is not None: c_opts.no_needle = <cbool>bool(no_needle)
+        if style is not None: c_opts.style = <cui_gauge_style><int>style
+        if detail is not None: c_opts.detail = _cstr(self._keep, detail)
+        if color is not None: c_opts.color = _to_cui_color(color)
+        if bands is not None:
+            _a = _arr_cui_gauge_band(bands, self._keep)
+            c_opts.band_count = <int>_a.n
+            if _a.n: c_opts.bands = <const cui_gauge_band *>(<_Mem>_a).ptr
         cui_radial_gauge_ex(self.ui, c_id, c_value, c_min, c_max, &c_opts)
 
-    def candlestick(self, str id not None, candles, *, width=None, height=None, format=None, overlay_count=None, no_volume=None, ohlc=None, up=None, down=None):
+    def candlestick(self, str id not None, candles, *, width=None, height=None, labels=None, format=None, overlays=None, no_volume=None, ohlc=None, up=None, down=None):
         """Returns the candle under the crosshair (pointer or keys), or -1."""
         self._need_frame()
         cdef const char * c_id
@@ -6124,12 +7032,20 @@ focus the editor and scroll there. Call from the same id scope."""
         if width is not None: c_opts.width = _to_cui_size(width)
         if height is not None: c_opts.height = <float>height
         if format is not None: c_opts.format = _cstr(self._keep, format)
-        if overlay_count is not None: c_opts.overlay_count = <int>overlay_count
         if no_volume is not None: c_opts.no_volume = <cbool>bool(no_volume)
         if ohlc is not None: c_opts.ohlc = <cbool>bool(ohlc)
         if up is not None: c_opts.up = _to_cui_color(up)
         if down is not None: c_opts.down = _to_cui_color(down)
         c_count = <int>c_candles.n
+        if labels is not None:
+            _a = _StrArray(labels)
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"labels needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.labels = <const char * const *>(<_StrArray>_a).ptr
+        if overlays is not None:
+            _a = _arr_cui_series(overlays, self._keep)
+            c_opts.overlay_count = <int>_a.n
+            if _a.n: c_opts.overlays = <const cui_series *>(<_Mem>_a).ptr
         cdef int r = cui_candlestick_ex(self.ui, c_id, <cui_candle *>c_candles.ptr, c_count, &c_opts)
         return r
 
@@ -6405,7 +7321,7 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         cdef cbool r = cui_citation(self.ui, c_number, <cui_source *>c_source.ptr)
         return r
 
-    def context_meter(self, str id not None, used, limit, *, part_count=None, unit=None):
+    def context_meter(self, str id not None, used, limit, *, parts=None, unit=None):
         self._need_frame()
         cdef const char * c_id
         cdef float c_used
@@ -6415,17 +7331,21 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         c_used = <float>used
         c_limit = <float>limit
         memset(&c_opts, 0, sizeof(c_opts))
-        if part_count is not None: c_opts.part_count = <int>part_count
         if unit is not None: c_opts.unit = _cstr(self._keep, unit)
+        if parts is not None:
+            _a = _arr_cui_viz_item(parts, self._keep)
+            c_opts.part_count = <int>_a.n
+            if _a.n: c_opts.parts = <const cui_viz_item *>(<_Mem>_a).ptr
         cui_context_meter_ex(self.ui, c_id, c_used, c_limit, &c_opts)
 
-    def response_actions(self, str id not None, *, copy_text=None, no_regenerate=None, no_share=None):
+    def response_actions(self, str id not None, *, copy_text=None, vote=None, no_regenerate=None, no_share=None):
         self._need_frame()
         cdef const char * c_id
         cdef cui_response_actions_opts c_opts
         c_id = _cstr(self._keep, id)
         memset(&c_opts, 0, sizeof(c_opts))
         if copy_text is not None: c_opts.copy_text = _cstr(self._keep, copy_text)
+        if vote is not None: c_opts.vote = <int *>_ref_bind(vote, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         if no_regenerate is not None: c_opts.no_regenerate = <cbool>bool(no_regenerate)
         if no_share is not None: c_opts.no_share = <cbool>bool(no_share)
         cdef int r = cui_response_actions_ex(self.ui, c_id, &c_opts)
@@ -6462,7 +7382,7 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         cdef cbool r = cui_model_picker_ex(self.ui, c_id, <cui_model *>c_models.ptr, c_count, &c_selected, &c_opts)
         return (r, c_selected)
 
-    def chat_composer(self, str id not None, TextBuffer buf not None, *, placeholder=None, busy=None, attachment_count=None, model_count=None, max_lines=None, width=None):
+    def chat_composer(self, str id not None, TextBuffer buf not None, *, placeholder=None, busy=None, attachments=None, removed=None, models=None, model=None, max_lines=None, width=None, mic=None, recording=None, levels=None, record_seconds=None):
         self._need_frame()
         cdef const char * c_id
         cdef TextBuffer b_buf
@@ -6473,10 +7393,27 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         memset(&c_opts, 0, sizeof(c_opts))
         if placeholder is not None: c_opts.placeholder = _cstr(self._keep, placeholder)
         if busy is not None: c_opts.busy = <cbool>bool(busy)
-        if attachment_count is not None: c_opts.attachment_count = <int>attachment_count
-        if model_count is not None: c_opts.model_count = <int>model_count
+        if removed is not None: c_opts.removed = <int *>_ref_bind(removed, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
+        if model is not None: c_opts.model = <int *>_ref_bind(model, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         if max_lines is not None: c_opts.max_lines = <int>max_lines
         if width is not None: c_opts.width = _to_cui_size(width)
+        if mic is not None: c_opts.mic = <cbool>bool(mic)
+        if recording is not None: c_opts.recording = <cbool>bool(recording)
+        if record_seconds is not None: c_opts.record_seconds = <float>record_seconds
+        if attachments is not None:
+            _a = _StrArray(attachments)
+            self._keep.append(_a)
+            c_opts.attachment_count = <int>_a.n
+            if _a.n: c_opts.attachments = <const char * const *>(<_StrArray>_a).ptr
+        if models is not None:
+            _a = _arr_cui_model(models, self._keep)
+            c_opts.model_count = <int>_a.n
+            if _a.n: c_opts.models = <const cui_model *>(<_Mem>_a).ptr
+        if levels is not None:
+            _a = _FloatArray(levels)
+            self._keep.append(_a)
+            c_opts.level_count = <int>_a.n
+            if _a.n: c_opts.levels = <const float *>(<_FloatArray>_a).ptr
         cdef int r = cui_chat_composer_ex(self.ui, c_id, b_buf.data, b_buf.cap, &c_opts)
         return r
 
@@ -6495,7 +7432,80 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         cdef cbool r = cui_voice_orb_ex(self.ui, c_id, c_state, c_level, &c_opts)
         return r
 
+    def voice_wave(self, str id not None, levels, *, clip=None, progress=None, owners=None, owner=None, color=None, pitch=None, step=None, width=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef _FloatArray c_levels
+        cdef int c_count
+        cdef cui_voice_wave_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_levels = _FloatArray(levels)
+        self._keep.append(c_levels)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if clip is not None: c_opts.clip = <cbool>bool(clip)
+        if progress is not None: c_opts.progress = <float *>_ref_bind(progress, self._keep, self, "float", sizeof(float), _refget_float, _refset_float, -1)
+        if owner is not None: c_opts.owner = <cui_voice_owner><int>owner
+        if color is not None: c_opts.color = _to_cui_color(color)
+        if pitch is not None: c_opts.pitch = <float>pitch
+        if step is not None: c_opts.step = <float>step
+        if width is not None: c_opts.width = _to_cui_size(width)
+        c_count = <int>c_levels.n
+        if owners is not None:
+            _a = _ScalarArray(owners, "B")
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"owners needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.owners = <const uint8_t *>(<_ScalarArray>_a).ptr
+        cdef cbool r = cui_voice_wave_ex(self.ui, c_id, c_levels.ptr, c_count, &c_opts)
+        return r
+
+    def voice_note(self, str id not None, note, *, mine=None, width=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef _Mem c_note
+        cdef cui_voice_note_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_note = _arr_cui_voice_note((note,), self._keep)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if mine is not None: c_opts.mine = <cbool>bool(mine)
+        if width is not None: c_opts.width = _to_cui_size(width)
+        cdef int r = cui_voice_note_ex(self.ui, c_id, <cui_voice_note *>c_note.ptr, &c_opts)
+        return (r, _list_cui_voice_note(c_note)[0])
+
+    def voice_session(self, str id not None, state, levels, *, owners=None, label=None, transcript=None, upcoming=None, speaker=None, you=None, assistant=None, muted=None, no_end=None, width=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef cui_voice_state c_state
+        cdef _FloatArray c_levels
+        cdef int c_count
+        cdef cui_voice_session_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_state = <cui_voice_state><int>state
+        c_levels = _FloatArray(levels)
+        self._keep.append(c_levels)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if label is not None: c_opts.label = _cstr(self._keep, label)
+        if transcript is not None: c_opts.transcript = _cstr(self._keep, transcript)
+        if upcoming is not None: c_opts.upcoming = _cstr(self._keep, upcoming)
+        if speaker is not None: c_opts.speaker = <cui_voice_owner><int>speaker
+        if you is not None: c_opts.you = _cstr(self._keep, you)
+        if assistant is not None: c_opts.assistant = _cstr(self._keep, assistant)
+        if muted is not None: c_opts.muted = <cbool *>_ref_bind(muted, self._keep, self, "cbool", sizeof(cbool), _refget_cbool, _refset_cbool, -1)
+        if no_end is not None: c_opts.no_end = <cbool>bool(no_end)
+        if width is not None: c_opts.width = _to_cui_size(width)
+        c_count = <int>c_levels.n
+        if owners is not None:
+            _a = _ScalarArray(owners, "B")
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"owners needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.owners = <const uint8_t *>(<_ScalarArray>_a).ptr
+        cdef int r = cui_voice_session_ex(self.ui, c_id, c_state, c_levels.ptr, c_count, &c_opts)
+        return r
+
     def week_calendar(self, str id not None, week_start, events, *, start_hour=None, end_hour=None, hour_height=None, height=None, read_only=None):
+        """Returns the activated event index or -1. Read-only events still activate.
+Pointer activation requires staying within the drag threshold through release.
+A drag ends when the event list shrinks, the calendar is disabled or
+`read_only` changes; moving the event again takes a new press."""
         self._need_frame()
         cdef const char * c_id
         cdef cui_date c_week_start
@@ -6515,7 +7525,7 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         cdef int r = cui_week_calendar_ex(self.ui, c_id, c_week_start, <cui_cal_event *>c_events.ptr, c_count, &c_opts)
         return (r, _list_cui_cal_event(c_events))
 
-    def month_calendar(self, str id not None, month, events, *, first_weekday=None, cell_height=None, hour12=None, today=None):
+    def month_calendar(self, str id not None, month, events, *, selected=None, first_weekday=None, cell_height=None, month_names=None, day_names=None, hour12=None, today=None):
         self._need_frame()
         cdef const char * c_id
         cdef cui_date c_month
@@ -6526,15 +7536,29 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         c_month = _to_cui_date(month)
         c_events = _arr_cui_month_event(events, self._keep)
         memset(&c_opts, 0, sizeof(c_opts))
+        if selected is not None: c_opts.selected = <cui_date *>_ref_bind(selected, self._keep, self, "cui_date", sizeof(cui_date), _refget_cui_date, _refset_cui_date, -1)
         if first_weekday is not None: c_opts.first_weekday = <int>first_weekday
         if cell_height is not None: c_opts.cell_height = <float>cell_height
         if hour12 is not None: c_opts.hour12 = <cbool>bool(hour12)
         if today is not None: c_opts.today = _to_cui_date(today)
         c_count = <int>c_events.n
+        if month_names is not None:
+            _a = _StrArray(month_names)
+            self._keep.append(_a)
+            if _a.n != 12: raise ValueError(f"month_names needs {12} items, got {_a.n}")
+            if _a.n: c_opts.month_names = <const char * const *>(<_StrArray>_a).ptr
+        if day_names is not None:
+            _a = _StrArray(day_names)
+            self._keep.append(_a)
+            if _a.n != 7: raise ValueError(f"day_names needs {7} items, got {_a.n}")
+            if _a.n: c_opts.day_names = <const char * const *>(<_StrArray>_a).ptr
         cdef cui_month_result r = cui_month_calendar_ex(self.ui, c_id, &c_month, <cui_month_event *>c_events.ptr, c_count, &c_opts)
         return (_from_cui_month_result(r), _from_cui_date(c_month))
 
     def gantt(self, str id not None, tasks, origin, days, *, day_width=None, row_height=None, height=None, today=None, read_only=None):
+        """Returns the activated task index or -1. Read-only tasks still activate.
+A drag ends when the task list shrinks, the chart is disabled or
+`read_only` changes; moving the bar again takes a new press."""
         self._need_frame()
         cdef const char * c_id
         cdef _Mem c_tasks
@@ -6645,7 +7669,7 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         cdef int r = cui_checklist_ex(self.ui, c_id, <cui_check_step *>c_steps.ptr, c_count, &c_opts)
         return (r, _list_cui_check_step(c_steps))
 
-    def multi_select(self, str id not None, items, selected, *, label=None, placeholder=None, searchable=None, max_chips=None, width=None):
+    def multi_select(self, str id not None, items, selected, *, label=None, placeholder=None, icons=None, searchable=None, max_chips=None, width=None):
         self._need_frame()
         cdef const char * c_id
         cdef _StrArray c_items
@@ -6665,6 +7689,11 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         if width is not None: c_opts.width = _to_cui_size(width)
         c_count = <int>c_items.n
         if c_selected.n != c_items.n: raise ValueError("selected and items must have the same length")
+        if icons is not None:
+            _a = _StrArray(icons)
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"icons needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.icons = <const char * const *>(<_StrArray>_a).ptr
         cdef cbool r = cui_multi_select_ex(self.ui, c_id, c_items.ptr, c_count, <cbool *>c_selected.ptr, &c_opts)
         return (r, c_selected.tolist())
 
@@ -6818,7 +7847,7 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         cdef cbool r = cui_knob_ex(self.ui, c_id, &c_value, c_min, c_max, &c_opts)
         return (r, c_value)
 
-    def fader(self, str id not None, value, min, max, *, label=None, format=None, unit=None, length=None, horizontal=None, step=None, reset=None, tick_count=None, meter_channels=None, hide_value=None, disabled=None):
+    def fader(self, str id not None, value, min, max, *, label=None, format=None, unit=None, length=None, horizontal=None, step=None, reset=None, ticks=None, meter=None, hide_value=None, disabled=None):
         self._need_frame()
         cdef const char * c_id
         cdef float c_value
@@ -6837,10 +7866,18 @@ Pass the formatted text ("$64,210", "1.2k"); digits are tabular."""
         if horizontal is not None: c_opts.horizontal = <cbool>bool(horizontal)
         if step is not None: c_opts.step = <float>step
         if reset is not None: c_opts.reset = <float>reset
-        if tick_count is not None: c_opts.tick_count = <int>tick_count
-        if meter_channels is not None: c_opts.meter_channels = <int>meter_channels
         if hide_value is not None: c_opts.hide_value = <cbool>bool(hide_value)
         if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
+        if ticks is not None:
+            _a = _FloatArray(ticks)
+            self._keep.append(_a)
+            c_opts.tick_count = <int>_a.n
+            if _a.n: c_opts.ticks = <const float *>(<_FloatArray>_a).ptr
+        if meter is not None:
+            _a = _FloatArray(meter)
+            self._keep.append(_a)
+            c_opts.meter_channels = <int>_a.n
+            if _a.n: c_opts.meter = <const float *>(<_FloatArray>_a).ptr
         cdef cbool r = cui_fader_ex(self.ui, c_id, &c_value, c_min, c_max, &c_opts)
         return (r, c_value)
 
@@ -7053,7 +8090,7 @@ cui_node_editor_begin (and up to the end of the frame)."""
         cdef cbool r = cui_node_deleted(self.ui, &c_node_id)
         return (r, c_node_id)
 
-    def toolbar_button(self, str icon not None, *, label=None, tooltip=None, shortcut=None, disabled=None):
+    def toolbar_button(self, str icon not None, *, label=None, tooltip=None, shortcut=None, toggle=None, disabled=None, tone=None, flyout=None):
         self._need_frame()
         cdef const char * c_icon
         cdef cui_tool_opts c_opts
@@ -7062,7 +8099,10 @@ cui_node_editor_begin (and up to the end of the frame)."""
         if label is not None: c_opts.label = _cstr(self._keep, label)
         if tooltip is not None: c_opts.tooltip = _cstr(self._keep, tooltip)
         if shortcut is not None: c_opts.shortcut = _cstr(self._keep, shortcut)
+        if toggle is not None: c_opts.toggle = <cbool *>_ref_bind(toggle, self._keep, self, "cbool", sizeof(cbool), _refget_cbool, _refset_cbool, -1)
         if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
+        if tone is not None: c_opts.tone = <cui_tone><int>tone
+        if flyout is not None: c_opts.flyout = <cbool>bool(flyout)
         cdef cbool r = cui_toolbar_button_ex(self.ui, c_icon, &c_opts)
         return r
 
@@ -7073,6 +8113,75 @@ cui_node_editor_begin (and up to the end of the frame)."""
     def toolbar_spacer(self):
         self._need_frame()
         cui_toolbar_spacer(self.ui)
+
+    def toolbar_radio(self, str id not None, icons, index, *, labels=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef _StrArray c_icons
+        cdef int c_count
+        cdef int c_index
+        cdef cui_toolbar_radio_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_icons = _StrArray(icons)
+        self._keep.append(c_icons)
+        c_index = <int>index
+        memset(&c_opts, 0, sizeof(c_opts))
+        c_count = <int>c_icons.n
+        if labels is not None:
+            _a = _StrArray(labels)
+            self._keep.append(_a)
+            if _a.n != (<long long>c_count): raise ValueError(f"labels needs {(<long long>c_count)} items, got {_a.n}")
+            if _a.n: c_opts.labels = <const char * const *>(<_StrArray>_a).ptr
+        cdef cbool r = cui_toolbar_radio_ex(self.ui, c_id, c_icons.ptr, c_count, &c_index, &c_opts)
+        return (r, c_index)
+
+    def toolbar_primary(self, str icon not None, *, label=None, tooltip=None, shortcut=None, toggle=None, disabled=None, tone=None, flyout=None):
+        """The main action at the end of a grouped toolbar: a larger button filled with the text color."""
+        self._need_frame()
+        cdef const char * c_icon
+        cdef cui_tool_opts c_opts
+        c_icon = _cstr(self._keep, icon)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if label is not None: c_opts.label = _cstr(self._keep, label)
+        if tooltip is not None: c_opts.tooltip = _cstr(self._keep, tooltip)
+        if shortcut is not None: c_opts.shortcut = _cstr(self._keep, shortcut)
+        if toggle is not None: c_opts.toggle = <cbool *>_ref_bind(toggle, self._keep, self, "cbool", sizeof(cbool), _refget_cbool, _refset_cbool, -1)
+        if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
+        if tone is not None: c_opts.tone = <cui_tone><int>tone
+        if flyout is not None: c_opts.flyout = <cbool>bool(flyout)
+        cdef cbool r = cui_toolbar_primary_ex(self.ui, c_icon, &c_opts)
+        return r
+
+    def toolbar_cycle(self, str id not None, items, index, *, label=None, tooltip=None, shortcut=None, toggle=None, disabled=None, tone=None, flyout=None):
+        """A small picker that steps through its choices on each click ("1x", "2x", "4x").
+Returns true when *index changed."""
+        self._need_frame()
+        cdef const char * c_id
+        cdef _StrArray c_items
+        cdef int c_count
+        cdef int c_index
+        cdef cui_tool_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_items = _StrArray(items)
+        self._keep.append(c_items)
+        c_index = <int>index
+        memset(&c_opts, 0, sizeof(c_opts))
+        if label is not None: c_opts.label = _cstr(self._keep, label)
+        if tooltip is not None: c_opts.tooltip = _cstr(self._keep, tooltip)
+        if shortcut is not None: c_opts.shortcut = _cstr(self._keep, shortcut)
+        if toggle is not None: c_opts.toggle = <cbool *>_ref_bind(toggle, self._keep, self, "cbool", sizeof(cbool), _refget_cbool, _refset_cbool, -1)
+        if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
+        if tone is not None: c_opts.tone = <cui_tone><int>tone
+        if flyout is not None: c_opts.flyout = <cbool>bool(flyout)
+        c_count = <int>c_items.n
+        cdef cbool r = cui_toolbar_cycle_ex(self.ui, c_id, c_items.ptr, c_count, &c_index, &c_opts)
+        return (r, c_index)
+
+    def flyout_mark(self):
+        """A small triangle in the corner of the previous component (at the end side) that
+says it opens a flyout or a menu. Any button can take it."""
+        self._need_frame()
+        cui_flyout_mark(self.ui)
 
     def status_bar_spacer(self):
         self._need_frame()
@@ -7413,7 +8522,7 @@ one texture and reused."""
         c_size = <float>size
         cui_emoji(self.ui, c_utf8, c_size)
 
-    def emoji_picker(self, str id not None, *, width=None, height=None, size=None, recent_cap=None, placeholder=None, empty_text=None, hint=None, no_search=None, no_preview=None, no_tone=None):
+    def emoji_picker(self, str id not None, *, width=None, height=None, size=None, recent_cap=None, tone=None, placeholder=None, empty_text=None, hint=None, group_names=None, no_search=None, no_preview=None, no_tone=None):
         self._need_frame()
         cdef const char * c_id
         cdef cui_emoji_picker_opts c_opts
@@ -7423,12 +8532,18 @@ one texture and reused."""
         if height is not None: c_opts.height = <float>height
         if size is not None: c_opts.size = <float>size
         if recent_cap is not None: c_opts.recent_cap = <size_t>recent_cap
+        if tone is not None: c_opts.tone = <int *>_ref_bind(tone, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         if placeholder is not None: c_opts.placeholder = _cstr(self._keep, placeholder)
         if empty_text is not None: c_opts.empty_text = _cstr(self._keep, empty_text)
         if hint is not None: c_opts.hint = _cstr(self._keep, hint)
         if no_search is not None: c_opts.no_search = <cbool>bool(no_search)
         if no_preview is not None: c_opts.no_preview = <cbool>bool(no_preview)
         if no_tone is not None: c_opts.no_tone = <cbool>bool(no_tone)
+        if group_names is not None:
+            _a = _StrArray(group_names)
+            self._keep.append(_a)
+            if _a.n != 10: raise ValueError(f"group_names needs {10} items, got {_a.n}")
+            if _a.n: c_opts.group_names = <const char * const *>(<_StrArray>_a).ptr
         cdef const char * r = cui_emoji_picker_ex(self.ui, c_id, &c_opts)
         return _str_or_none(r)
 
@@ -7476,7 +8591,7 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         cdef cui_rect r = cui_flame_span_rect(self.ui, c_flame, <cui_flame_span *>c_span.ptr)
         return _from_cui_rect(r)
 
-    def curve_editor(self, str id not None, keys, capacity, *, x_min=None, x_max=None, y_min=None, y_max=None, width=None, height=None, x_format=None, y_format=None, x_label=None, y_label=None, snap=None, show_playhead=None, playhead=None):
+    def curve_editor(self, str id not None, keys, capacity, *, x_min=None, x_max=None, y_min=None, y_max=None, width=None, height=None, x_format=None, y_format=None, x_label=None, y_label=None, selected=None, snap=None, show_playhead=None, playhead=None):
         self._need_frame()
         cdef const char * c_id
         cdef _Mem c_keys
@@ -7499,13 +8614,14 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         if y_format is not None: c_opts.y_format = _cstr(self._keep, y_format)
         if x_label is not None: c_opts.x_label = _cstr(self._keep, x_label)
         if y_label is not None: c_opts.y_label = _cstr(self._keep, y_label)
+        if selected is not None: c_opts.selected = <int *>_ref_bind(selected, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         if snap is not None: c_opts.snap = <cbool>bool(snap)
         if show_playhead is not None: c_opts.show_playhead = <cbool>bool(show_playhead)
         if playhead is not None: c_opts.playhead = <float>playhead
         cdef cui_curve_result r = cui_curve_editor_ex(self.ui, c_id, <cui_curve_key *>c_keys.ptr, &c_count, c_capacity, &c_opts)
         return (_from_cui_curve_result(r), _list_cui_curve_key(c_keys)[:_clamp_count(c_count, c_keys.n)])
 
-    def gradient_editor(self, str id not None, stops, capacity, *, width=None, height=None):
+    def gradient_editor(self, str id not None, stops, capacity, *, width=None, height=None, selected=None):
         self._need_frame()
         cdef const char * c_id
         cdef _Mem c_stops
@@ -7520,8 +8636,161 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         memset(&c_opts, 0, sizeof(c_opts))
         if width is not None: c_opts.width = _to_cui_size(width)
         if height is not None: c_opts.height = <float>height
+        if selected is not None: c_opts.selected = <int *>_ref_bind(selected, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         cdef cui_gradient_result r = cui_gradient_editor_ex(self.ui, c_id, <cui_gradient_stop *>c_stops.ptr, &c_count, c_capacity, &c_opts)
         return (_from_cui_gradient_result(r), _list_cui_gradient_stop(c_stops)[:_clamp_count(c_count, c_stops.n)])
+
+    def status_tag(self, str label not None, status, *, size=None, removable=None, icon=None, tone=None, id=None):
+        self._need_frame()
+        cdef const char * c_label
+        cdef cui_tag_status c_status
+        cdef cui_status_tag_opts c_opts
+        c_label = _cstr(self._keep, label)
+        c_status = <cui_tag_status><int>status
+        memset(&c_opts, 0, sizeof(c_opts))
+        if size is not None: c_opts.size = <cui_control_size><int>size
+        if removable is not None: c_opts.removable = <cbool>bool(removable)
+        if icon is not None: c_opts.icon = _cstr(self._keep, icon)
+        if tone is not None: c_opts.tone = <cui_tone><int>tone
+        if id is not None: c_opts.id = _cstr(self._keep, id)
+        cdef cbool r = cui_status_tag_ex(self.ui, c_label, c_status, &c_opts)
+        return r
+
+    def ratio_slider(self, str first not None, str second not None, ratio, *, tone=None, step=None, height=None, width=None, disabled=None):
+        self._need_frame()
+        cdef const char * c_first
+        cdef const char * c_second
+        cdef float c_ratio
+        cdef cui_ratio_slider_opts c_opts
+        c_first = _cstr(self._keep, first)
+        c_second = _cstr(self._keep, second)
+        c_ratio = <float>ratio
+        memset(&c_opts, 0, sizeof(c_opts))
+        if tone is not None: c_opts.tone = <cui_tone><int>tone
+        if step is not None: c_opts.step = <float>step
+        if height is not None: c_opts.height = <float>height
+        if width is not None: c_opts.width = _to_cui_size(width)
+        if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
+        cdef cbool r = cui_ratio_slider_ex(self.ui, c_first, c_second, &c_ratio, &c_opts)
+        return (r, c_ratio)
+
+    def gradient_slider(self, str label not None, value, min, max, *, track=None, stops=None, color=None, color_out=None, step=None, format=None, value_=None, swatch=None, tool=None, tool_tooltip=None, tool_on=None, plain=None, disabled=None):
+        self._need_frame()
+        cdef const char * c_label
+        cdef float c_value
+        cdef float c_min
+        cdef float c_max
+        cdef cui_gradient_slider_opts c_opts
+        c_label = _cstr(self._keep, label)
+        c_value = <float>value
+        c_min = <float>min
+        c_max = <float>max
+        memset(&c_opts, 0, sizeof(c_opts))
+        if track is not None: c_opts.track = <cui_gradient_track><int>track
+        if color is not None: c_opts.color = _to_cui_color(color)
+        if color_out is not None: c_opts.color_out = <cui_color *>_ref_bind(color_out, self._keep, self, "cui_color", sizeof(cui_color), _refget_cui_color, _refset_cui_color, -1)
+        if step is not None: c_opts.step = <float>step
+        if format is not None: c_opts.format = _cstr(self._keep, format)
+        if value_ is not None: c_opts.value = _cstr(self._keep, value_)
+        if swatch is not None: c_opts.swatch = <cbool>bool(swatch)
+        if tool is not None: c_opts.tool = _cstr(self._keep, tool)
+        if tool_tooltip is not None: c_opts.tool_tooltip = _cstr(self._keep, tool_tooltip)
+        if tool_on is not None: c_opts.tool_on = <cbool>bool(tool_on)
+        if plain is not None: c_opts.plain = <cbool>bool(plain)
+        if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
+        if stops is not None:
+            _a = _arr_cui_gradient_stop(stops, self._keep)
+            c_opts.stop_count = <int>_a.n
+            if _a.n: c_opts.stops = <const cui_gradient_stop *>(<_Mem>_a).ptr
+        cdef int r = cui_gradient_slider_ex(self.ui, c_label, &c_value, c_min, c_max, &c_opts)
+        return (r, c_value)
+
+    def step_slider(self, str label not None, value, min, max, *, labels=None, format=None, value_=None, tool=None, tool_tooltip=None, tool_on=None, plain=None, disabled=None):
+        self._need_frame()
+        cdef const char * c_label
+        cdef int c_value
+        cdef int c_min
+        cdef int c_max
+        cdef cui_step_slider_opts c_opts
+        c_label = _cstr(self._keep, label)
+        c_value = <int>value
+        c_min = <int>min
+        c_max = <int>max
+        memset(&c_opts, 0, sizeof(c_opts))
+        if format is not None: c_opts.format = _cstr(self._keep, format)
+        if value_ is not None: c_opts.value = _cstr(self._keep, value_)
+        if tool is not None: c_opts.tool = _cstr(self._keep, tool)
+        if tool_tooltip is not None: c_opts.tool_tooltip = _cstr(self._keep, tool_tooltip)
+        if tool_on is not None: c_opts.tool_on = <cbool>bool(tool_on)
+        if plain is not None: c_opts.plain = <cbool>bool(plain)
+        if disabled is not None: c_opts.disabled = <cbool>bool(disabled)
+        if labels is not None:
+            _a = _StrArray(labels)
+            self._keep.append(_a)
+            if _a.n != (<long long>c_max) - (<long long>c_min) + 1: raise ValueError(f"labels needs {(<long long>c_max) - (<long long>c_min) + 1} items, got {_a.n}")
+            if _a.n: c_opts.labels = <const char * const *>(<_StrArray>_a).ptr
+        cdef int r = cui_step_slider_ex(self.ui, c_label, &c_value, c_min, c_max, &c_opts)
+        return (r, c_value)
+
+    def aspect_picker(self, str label not None, index, *, ratios=None, custom=None, custom_label=None, base=None, value=None, plain=None):
+        self._need_frame()
+        cdef const char * c_label
+        cdef int c_index
+        cdef cui_aspect_picker_opts c_opts
+        c_label = _cstr(self._keep, label)
+        c_index = <int>index
+        memset(&c_opts, 0, sizeof(c_opts))
+        if custom is not None: c_opts.custom = <cbool>bool(custom)
+        if custom_label is not None: c_opts.custom_label = _cstr(self._keep, custom_label)
+        if base is not None: c_opts.base = <int>base
+        if value is not None: c_opts.value = _cstr(self._keep, value)
+        if plain is not None: c_opts.plain = <cbool>bool(plain)
+        if ratios is not None:
+            _a = _arr_cui_aspect(ratios, self._keep)
+            c_opts.count = <int>_a.n
+            if _a.n: c_opts.ratios = <const cui_aspect *>(<_Mem>_a).ptr
+        cdef cbool r = cui_aspect_picker_ex(self.ui, c_label, &c_index, &c_opts)
+        return (r, c_index)
+
+    def option_action(self, str label not None, items, index, str icon not None, *, tooltip=None, action_on=None, action_disabled=None, value=None, plain=None):
+        self._need_frame()
+        cdef const char * c_label
+        cdef _StrArray c_items
+        cdef int c_count
+        cdef int c_index
+        cdef const char * c_icon
+        cdef cui_option_action_opts c_opts
+        c_label = _cstr(self._keep, label)
+        c_items = _StrArray(items)
+        self._keep.append(c_items)
+        c_index = <int>index
+        c_icon = _cstr(self._keep, icon)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if tooltip is not None: c_opts.tooltip = _cstr(self._keep, tooltip)
+        if action_on is not None: c_opts.action_on = <cbool>bool(action_on)
+        if action_disabled is not None: c_opts.action_disabled = <cbool>bool(action_disabled)
+        if value is not None: c_opts.value = _cstr(self._keep, value)
+        if plain is not None: c_opts.plain = <cbool>bool(plain)
+        c_count = <int>c_items.n
+        cdef int r = cui_option_action_ex(self.ui, c_label, c_items.ptr, c_count, &c_index, c_icon, &c_opts)
+        return (r, c_index)
+
+    def seed_field(self, str label not None, seed, locked, *, value=None, random_text=None, fixed_text=None, plain=None):
+        self._need_frame()
+        cdef const char * c_label
+        cdef uint32_t c_seed
+        cdef cbool c_locked
+        cdef cui_seed_field_opts c_opts
+        c_label = _cstr(self._keep, label)
+        c_seed = <uint32_t>seed
+        c_locked = <cbool>bool(locked)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if value is not None: c_opts.value = _cstr(self._keep, value)
+        if random_text is not None: c_opts.random_text = _cstr(self._keep, random_text)
+        if fixed_text is not None: c_opts.fixed_text = _cstr(self._keep, fixed_text)
+        if plain is not None: c_opts.plain = <cbool>bool(plain)
+        cdef int r = cui_seed_field_ex(self.ui, c_label, &c_seed, &c_locked, &c_opts)
+        return (r, c_seed, c_locked)
 
     def problems(self, str id not None, diags, *, width=None, height=None, no_toolbar=None):
         self._need_frame()
@@ -7539,7 +8808,7 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         cdef cui_problems_result r = cui_problems_ex(self.ui, c_id, <cui_diagnostic *>c_diags.ptr, c_count, &c_opts)
         return _from_cui_problems_result(r)
 
-    def pipeline(self, str id not None, stages, jobs, *, width=None):
+    def pipeline(self, str id not None, stages, jobs, *, width=None, selected=None):
         self._need_frame()
         cdef const char * c_id
         cdef _StrArray c_stages
@@ -7553,6 +8822,7 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         c_jobs = _arr_cui_pipeline_job(jobs, self._keep)
         memset(&c_opts, 0, sizeof(c_opts))
         if width is not None: c_opts.width = _to_cui_size(width)
+        if selected is not None: c_opts.selected = <int *>_ref_bind(selected, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         c_stage_count = <int>c_stages.n
         c_job_count = <int>c_jobs.n
         cdef cui_pipeline_result r = cui_pipeline_ex(self.ui, c_id, c_stages.ptr, c_stage_count, <cui_pipeline_job *>c_jobs.ptr, c_job_count, &c_opts)
@@ -7582,7 +8852,7 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         cdef const char * r = cui_cron_describe(self.ui, c_cron)
         return _str_or_none(r)
 
-    def keymap(self, str id not None, bindings, *, width=None, category_count=None, no_function_row=None):
+    def keymap(self, str id not None, bindings, *, width=None, categories=None, mods=None, no_function_row=None):
         self._need_frame()
         cdef const char * c_id
         cdef _Mem c_bindings
@@ -7592,13 +8862,18 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         c_bindings = _arr_cui_keymap_binding(bindings, self._keep)
         memset(&c_opts, 0, sizeof(c_opts))
         if width is not None: c_opts.width = _to_cui_size(width)
-        if category_count is not None: c_opts.category_count = <int>category_count
+        if mods is not None: c_opts.mods = <int *>_ref_bind(mods, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         if no_function_row is not None: c_opts.no_function_row = <cbool>bool(no_function_row)
         c_count = <int>c_bindings.n
+        if categories is not None:
+            _a = _StrArray(categories)
+            self._keep.append(_a)
+            c_opts.category_count = <int>_a.n
+            if _a.n: c_opts.categories = <const char * const *>(<_StrArray>_a).ptr
         cdef cui_keymap_result r = cui_keymap_ex(self.ui, c_id, <cui_keymap_binding *>c_bindings.ptr, c_count, &c_opts)
         return _from_cui_keymap_result(r)
 
-    def graph_view(self, str id not None, nodes, edges, *, width=None, height=None, top_down=None):
+    def graph_view(self, str id not None, nodes, edges, *, width=None, height=None, top_down=None, selected=None):
         self._need_frame()
         cdef const char * c_id
         cdef _Mem c_nodes
@@ -7613,12 +8888,13 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         if width is not None: c_opts.width = _to_cui_size(width)
         if height is not None: c_opts.height = <float>height
         if top_down is not None: c_opts.top_down = <cbool>bool(top_down)
+        if selected is not None: c_opts.selected = <int *>_ref_bind(selected, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         c_node_count = <int>c_nodes.n
         c_edge_count = <int>c_edges.n
         cdef cui_graph_result r = cui_graph_view_ex(self.ui, c_id, <cui_graph_node *>c_nodes.ptr, c_node_count, <cui_graph_edge *>c_edges.ptr, c_edge_count, &c_opts)
         return _from_cui_graph_result(r)
 
-    def trace_view(self, str id not None, tracks, spans, view, selected, *, width=None, height=None, row_height=None, marker_count=None):
+    def trace_view(self, str id not None, tracks, spans, view, selected, *, width=None, height=None, row_height=None, markers=None, links=None):
         self._need_frame()
         cdef const char * c_id
         cdef _Mem c_tracks
@@ -7637,13 +8913,37 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         if width is not None: c_opts.width = _to_cui_size(width)
         if height is not None: c_opts.height = <float>height
         if row_height is not None: c_opts.row_height = <float>row_height
-        if marker_count is not None: c_opts.marker_count = <int>marker_count
         c_track_count = <int>c_tracks.n
         c_span_count = <int>c_spans.n
+        if markers is not None:
+            _a = _arr_cui_trace_marker(markers, self._keep)
+            c_opts.marker_count = <int>_a.n
+            if _a.n: c_opts.markers = <const cui_trace_marker *>(<_Mem>_a).ptr
+        if links is not None:
+            _a = _arr_cui_trace_link(links, self._keep)
+            c_opts.link_count = <int>_a.n
+            if _a.n: c_opts.links = <const cui_trace_link *>(<_Mem>_a).ptr
         cdef cui_trace_result r = cui_trace_view_ex(self.ui, c_id, <cui_trace_track *>c_tracks.ptr, c_track_count, <cui_trace_span *>c_spans.ptr, c_span_count, &c_view, &c_selected, &c_opts)
         return (_from_cui_trace_result(r), _list_cui_trace_track(c_tracks), _from_cui_trace_view(c_view), c_selected)
 
-    def regex_tester(self, str id not None, TextBuffer pattern not None, TextBuffer text not None, *, width=None, height=None):
+    def trace_span_rect(self, trace, span):
+        """Where a span is drawn, in points (zero size when out of view or in a folded
+lane below its top row): its time extent and row, as cui_flame_span_rect
+gives one; the bar inside is a point narrower, the gap between neighbours,
+and a selected sliver is widened to 3 points. trace is the view's id:
+cui_last_id(ui) right after the call. Asked right after the call, it
+answers at this frame's view in the rectangle of the previous frame, as
+this frame is not laid out yet; after cui_end_frame, where this frame drew
+it, until the next frame begins."""
+        self._need_frame()
+        cdef cui_id c_trace
+        cdef _Mem c_span
+        c_trace = <cui_id>trace
+        c_span = _arr_cui_trace_span((span,), self._keep)
+        cdef cui_rect r = cui_trace_span_rect(self.ui, c_trace, <cui_trace_span *>c_span.ptr)
+        return _from_cui_rect(r)
+
+    def regex_tester(self, str id not None, TextBuffer pattern not None, TextBuffer text not None, *, width=None, height=None, flags=None):
         self._need_frame()
         cdef const char * c_id
         cdef TextBuffer b_pattern
@@ -7657,6 +8957,7 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         memset(&c_opts, 0, sizeof(c_opts))
         if width is not None: c_opts.width = _to_cui_size(width)
         if height is not None: c_opts.height = <float>height
+        if flags is not None: c_opts.flags = <int *>_ref_bind(flags, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         cdef cui_regex_tester_result r = cui_regex_tester_ex(self.ui, c_id, b_pattern.data, b_pattern.cap, b_text.data, b_pattern.cap, &c_opts)
         return _from_cui_regex_tester_result(r)
 
@@ -7751,7 +9052,7 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         cdef cui_coverage_result r = cui_coverage_ex(self.ui, c_id, <cui_coverage_file *>c_files.ptr, c_count, &c_opts)
         return _from_cui_coverage_result(r)
 
-    def event_track(self, str id not None, times, capacity, min, max, *, width=None, step=None, units=None, format=None, label_step=None, no_add=None, no_remove=None, no_axis=None):
+    def event_track(self, str id not None, times, capacity, min, max, *, width=None, step=None, units=None, format=None, label_step=None, selected=None, no_add=None, no_remove=None, no_axis=None):
         self._need_frame()
         cdef const char * c_id
         cdef _ScalarArray c_times
@@ -7774,6 +9075,7 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         if units is not None: c_opts.units = <cui_axis_units><int>units
         if format is not None: c_opts.format = _cstr(self._keep, format)
         if label_step is not None: c_opts.label_step = <double>label_step
+        if selected is not None: c_opts.selected = <int *>_ref_bind(selected, self._keep, self, "int", sizeof(int), _refget_int, _refset_int, -1)
         if no_add is not None: c_opts.no_add = <cbool>bool(no_add)
         if no_remove is not None: c_opts.no_remove = <cbool>bool(no_remove)
         if no_axis is not None: c_opts.no_axis = <cbool>bool(no_axis)
@@ -7811,6 +9113,134 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         if align is not None: c_opts.align = <cui_text_align><int>align
         if width is not None: c_opts.width = _to_cui_size(width)
         cui_dot_display_ex(self.ui, c_text, &c_opts)
+
+    def format_bar(self, str id not None, format, *, styles=None, colors=None, footer=None, footer_keys=None, delete_question=None, no_delete=None, no_more=None):
+        """Returns CUI_FORMAT_* flags."""
+        self._need_frame()
+        cdef const char * c_id
+        cdef cui_text_format c_format
+        cdef cui_format_bar_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_format = _to_cui_text_format(format)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if footer is not None: c_opts.footer = _cstr(self._keep, footer)
+        if footer_keys is not None: c_opts.footer_keys = _cstr(self._keep, footer_keys)
+        if delete_question is not None: c_opts.delete_question = _cstr(self._keep, delete_question)
+        if no_delete is not None: c_opts.no_delete = <cbool>bool(no_delete)
+        if no_more is not None: c_opts.no_more = <cbool>bool(no_more)
+        if styles is not None:
+            _a = _arr_cui_text_style(styles, self._keep)
+            c_opts.style_count = <int>_a.n
+            if _a.n: c_opts.styles = <const cui_text_style *>(<_Mem>_a).ptr
+        if colors is not None:
+            _a = _ScalarArray(colors, "i")
+            self._keep.append(_a)
+            c_opts.color_count = <int>_a.n
+            if _a.n: c_opts.colors = <const cui_tone *>(<_ScalarArray>_a).ptr
+        cdef int r = cui_format_bar_ex(self.ui, c_id, &c_format, &c_opts)
+        return (r, _from_cui_text_format(c_format))
+
+    def live_cursors(self, str id not None, users, *, view=None, no_glide=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef _Mem c_users
+        cdef int c_count
+        cdef cui_live_cursors_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_users = _arr_cui_live_user(users, self._keep)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if view is not None: c_opts.view = <const cui_node_view *>_mem_ptr(_arr_cui_node_view((view,), self._keep))
+        if no_glide is not None: c_opts.no_glide = <cbool>bool(no_glide)
+        c_count = <int>c_users.n
+        cui_live_cursors_ex(self.ui, c_id, <cui_live_user *>c_users.ptr, c_count, &c_opts)
+
+    def presence_pill(self, str id not None, users, *, size=None, max_visible=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef _Mem c_users
+        cdef int c_count
+        cdef cui_presence_pill_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_users = _arr_cui_live_user(users, self._keep)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if size is not None: c_opts.size = <float>size
+        if max_visible is not None: c_opts.max_visible = <int>max_visible
+        c_count = <int>c_users.n
+        cui_presence_pill_ex(self.ui, c_id, <cui_live_user *>c_users.ptr, c_count, &c_opts)
+
+    def selection_ring(self, color, *, name=None, radius=None):
+        self._need_frame()
+        cdef cui_color c_color
+        cdef cui_selection_ring_opts c_opts
+        c_color = _to_cui_color(color)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if name is not None: c_opts.name = _cstr(self._keep, name)
+        if radius is not None: c_opts.radius = <float>radius
+        cui_selection_ring_ex(self.ui, c_color, &c_opts)
+
+    def canvas_controls(self, str id not None, view, *, steps=None, content=None, toggle_count=None, no_fit=None, start_side=None):
+        """Returns CUI_CANVAS_* flags."""
+        self._need_frame()
+        cdef const char * c_id
+        cdef cui_node_view c_view
+        cdef cui_canvas_controls_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_view = _to_cui_node_view(view)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if content is not None: c_opts.content = _to_cui_rect(content)
+        if toggle_count is not None: c_opts.toggle_count = <int>toggle_count
+        if no_fit is not None: c_opts.no_fit = <cbool>bool(no_fit)
+        if start_side is not None: c_opts.start_side = <cbool>bool(start_side)
+        if steps is not None:
+            _a = _FloatArray(steps)
+            self._keep.append(_a)
+            c_opts.step_count = <int>_a.n
+            if _a.n: c_opts.steps = <const float *>(<_FloatArray>_a).ptr
+        cdef int r = cui_canvas_controls_ex(self.ui, c_id, &c_view, &c_opts)
+        return (r, _from_cui_node_view(c_view))
+
+    def result_card(self, str id not None, image, str title not None, *, caption=None, badge=None, badge_tone=None, image_w=None, image_h=None, width=None, aspect=None):
+        self._need_frame()
+        cdef const char * c_id
+        cdef cui_texture c_image
+        cdef const char * c_title
+        cdef cui_result_card_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_image = <cui_texture>image
+        c_title = _cstr(self._keep, title)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if caption is not None: c_opts.caption = _cstr(self._keep, caption)
+        if badge is not None: c_opts.badge = _cstr(self._keep, badge)
+        if badge_tone is not None: c_opts.badge_tone = <cui_tone><int>badge_tone
+        if image_w is not None: c_opts.image_w = <int>image_w
+        if image_h is not None: c_opts.image_h = <int>image_h
+        if width is not None: c_opts.width = _to_cui_size(width)
+        if aspect is not None: c_opts.aspect = <float>aspect
+        cdef cbool r = cui_result_card_ex(self.ui, c_id, c_image, c_title, &c_opts)
+        return r
+
+    def selection_bar(self, str id not None, count, actions, *, selected=None, count_format=None, anchor=None, no_escape=None):
+        """Returns the action picked, CUI_SELECTION_CLEARED when the clear button or Esc
+cleared the selection, or CUI_SELECTION_NONE."""
+        self._need_frame()
+        cdef const char * c_id
+        cdef int c_count
+        cdef _Mem c_actions
+        cdef int c_action_count
+        cdef cui_selection_bar_opts c_opts
+        c_id = _cstr(self._keep, id)
+        c_count = <int>count
+        c_actions = _arr_cui_selection_action(actions, self._keep)
+        memset(&c_opts, 0, sizeof(c_opts))
+        if count_format is not None: c_opts.count_format = _cstr(self._keep, count_format)
+        if anchor is not None: c_opts.anchor = <cui_id>anchor
+        if no_escape is not None: c_opts.no_escape = <cbool>bool(no_escape)
+        c_action_count = <int>c_actions.n
+        if selected is not None:
+            c_opts.selected = <cbool *>_ref_bind(selected, self._keep, self, "cbool", sizeof(cbool), _refget_cbool, _refset_cbool, len(selected.value))
+            c_opts.item_count = <int>len(selected.value)
+        cdef int r = cui_selection_bar_ex(self.ui, c_id, c_count, <cui_selection_action *>c_actions.ptr, c_action_count, &c_opts)
+        return r
 
     def draw_rect(self, r, radius, fill):
         self._need_paint()
@@ -7978,6 +9408,74 @@ of view). flame is the graph's id: cui_last_id(ui) right after the call."""
         self._need_paint()
         cui_pop_clip(self.ui)
 
+    def request_component_focus(self, id):
+        """Request focus for a submitted canvas with component_input enabled. The last
+request wins at end_frame and expires there. An absent, disabled, or
+nonparticipating target leaves the current focus unchanged. Removal revokes
+participating focus; built-in forward-focus behavior is unchanged."""
+        self._need_alive()
+        cdef cui_id c_id
+        c_id = <cui_id>id
+        cui_request_component_focus(self.ui, c_id)
+
+    def component_has_input(self, id):
+        """Test eligibility from a completed submission: call after end_frame or before
+submitting components in the next frame. Includes window, modal and popup
+exclusion. Unsubmitted host visibility/disabled changes remain host-owned."""
+        self._need_alive()
+        cdef cui_id c_id
+        c_id = <cui_id>id
+        cdef cbool r = cui_component_has_input(self.ui, c_id)
+        return r
+
+    def focused_id(self):
+        """Current owner, including built-ins. Ownership alone does not imply eligibility."""
+        self._need_alive()
+        cdef cui_id r = cui_focused_id(self.ui)
+        return r
+
+    def window_focused(self):
+        self._need_alive()
+        cdef cbool r = cui_window_focused(self.ui)
+        return r
+
+    def focus_visible(self, id):
+        """Whether `id` has keyboard focus with its ring showing; for a painter."""
+        self._need_frame()
+        cdef cui_id c_id
+        c_id = <cui_id>id
+        cdef cbool r = cui_focus_visible(self.ui, c_id)
+        return r
+
+    def wheel_region(self, id, rect):
+        """Marks the part of a canvas that takes the wheel, for a canvas that zooms,
+pans or scrolls what it draws the way the built-in charts, graphs and
+timelines do. Call it from the paint callback; over the rectangle the wheel
+stops there instead of scrolling an enclosing scroll area or the page. Give
+it an id of its own, not the canvas's: the region keeps scroll state under
+that id. A canvas in a disabled scope marks nothing, so the wheel scrolls
+the page there. Like every hit area, the region is the one painted on the
+previous frame."""
+        self._need_frame()
+        cdef cui_id c_id
+        cdef cui_rect c_rect
+        c_id = <cui_id>id
+        c_rect = _to_cui_rect(rect)
+        cui_wheel_region(self.ui, c_id, c_rect)
+
+    def wheel_take(self, id, delta):
+        """Returns the wheel aimed at a cui_wheel_region id this frame, in lines with
++y up as cui_input_scroll gives it, and consumes it, so call it once per
+frame. Returns false and leaves *delta alone when no wheel came, and in a
+disabled scope: call it in the scope the canvas was built in."""
+        self._need_frame()
+        cdef cui_id c_id
+        cdef cui_vec2 c_delta
+        c_id = <cui_id>id
+        c_delta = _to_cui_vec2(delta)
+        cdef cbool r = cui_wheel_take(self.ui, c_id, &c_delta)
+        return (r, _from_cui_vec2(c_delta))
+
     def animate(self, id, target):
         """Animation helpers. Values move toward target with a spring and request
 frames while moving. Reduced motion makes them snap."""
@@ -8049,6 +9547,23 @@ def date_today():
     cdef list keep = []
     cdef cui_date r = cui_date_today()
     return _from_cui_date(r)
+
+def voice_resample(levels, out, columns):
+    """Resamples a clip to `columns` levels the way the clip strip does (the loudest
+level of each stretch; a stretch with no audio stays CUI_VOICE_SILENT), for
+keeping a short waveform with a message. Returns the number written."""
+    cdef list keep = []
+    cdef _FloatArray c_levels
+    cdef int c_count
+    cdef float c_out
+    cdef int c_columns
+    c_levels = _FloatArray(levels)
+    keep.append(c_levels)
+    c_out = <float>out
+    c_columns = <int>columns
+    c_count = <int>c_levels.n
+    cdef int r = cui_voice_resample(c_levels.ptr, c_count, &c_out, c_columns)
+    return (r, c_out)
 
 def date_to_days(d):
     cdef list keep = []

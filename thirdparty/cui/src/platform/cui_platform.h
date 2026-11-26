@@ -12,6 +12,7 @@ struct cui_app {
     char title[256];
     cui_gl_renderer *gl;
     cui_sw_renderer *sw;
+    struct cui_gpu_renderer *gpu;       /* the platform's GPU renderer (CUI_D3D12, CUI_VULKAN or CUI_METAL builds) */
     uint8_t *sw_pixels;
     int sw_w, sw_h;
     bool software;
@@ -25,6 +26,7 @@ struct cui_app {
     double pace_start;         /* vsync check: start of the current run of animation frames */
     int pace_frames, pace_fast;
     bool vsync_off;            /* vsync was asked for, but the swap does not wait: pace by the clock */
+    bool present_fast;         /* the backend presents without vsync for a window transition: pace by the clock */
     void (*frame_cb)(cui_ctx *ui, void *user);
     void *frame_user;
     bool in_live_resize;
@@ -33,6 +35,7 @@ struct cui_app {
     const char *screenshot_path;  /* CUI_SCREENSHOT: save a PNG and quit */
     int screenshot_frames;
     int frames;
+    cui_window_placement placement;   /* the copy desc.placement points to, when one was given */
 };
 
 /* Implemented by each backend. */
@@ -63,5 +66,15 @@ bool cui__plat_open_url(const char *url);
 void cui__app_render(cui_app *app);                   /* end frame (if open), render, present */
 void cui__app_live_frame(cui_app *app);               /* run one frame from inside a resize loop */
 void cui__app_set_clipboard_cache(cui_app *app, const char *utf8);
+
+void cui__plat_maximize(cui_app *app);
+void cui__plat_minimize(cui_app *app);
+void cui__plat_restore(cui_app *app);
+cui_window_state cui__plat_window_state(cui_app *app);
+void cui__plat_set_position(cui_app *app, int x, int y);
+/* Fills in the normal size and place, and the state: maximized also for a minimized window that
+ * comes back maximized. desc.placement, when set, has already set desc.width and desc.height;
+ * cui__plat_init places the window and cui__plat_show opens it maximized. */
+void cui__plat_placement(cui_app *app, cui_window_placement *out);
 
 #endif

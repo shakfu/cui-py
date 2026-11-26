@@ -6,15 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0]
+
 ### Added
 
-- `cui.Pty` and `ui.pty(id, p)`: a child process on a pseudo-terminal, shown by cui-repl's terminal view and emulated by libghostty-vt 1.0.0. It is behind the CMake option `CUI_PY_PTY`, off by default. It is POSIX only and needs Zig 0.17 to build. A default build compiles a stub, so `cui.Pty()` raises and `cui.PTY_AVAILABLE` is false. The view is compiled into `_core` and not a second extension module, because a second module would link its own copy of CUI and run it on contexts that `_core` created. `thirdparty/cui-repl/src/cuix.c` reads CUI 1.4.0's private `cui_internal.h`, so a CUI update can break it.
+- `cui.Pty` and `ui.pty(id, p)`: a child process on a pseudo-terminal, shown by cui-repl's terminal view and emulated by libghostty-vt 1.0.0. It is behind the CMake option `CUI_PY_PTY`, off by default. It is POSIX only and needs Zig 0.17 to build. A default build compiles a stub, so `cui.Pty()` raises and `cui.PTY_AVAILABLE` is false. The view is compiled into `_core` and not a second extension module, because a second module would link its own copy of CUI and run it on contexts that `_core` created. `thirdparty/cui-repl/src/cuix.c` calls CUI's public API for focus queries, the cursor and the clipboard, and reads the private `cui_internal.h` for text, keys, Tab, setting focus and the wheel, so a CUI update can break it.
+
+- Window state and placement on `App`: `maximize`, `minimize`, `restore`, `window_state`, `set_position`, `placement` and `follow_system_theme`, and `App(placement=...)` to reopen a window where it was. `placement()` returns a `cui.WindowPlacement`. CUI clamps a placement's size to the minimum size.
+
+- `ctx.image_update(tex, x, y, width, height, rgba, stride=0)` replaces a region of an image texture in place, for video and camera frames. It takes only textures from this context's `image_create` or `image_load`. Handles are plain ints, and an R8 font-atlas handle would make the OpenGL renderer read four times the buffer. `rgba` is any C-contiguous buffer, such as `bytes`, a `memoryview` or a NumPy array; `image_create` takes the same.
+
+- Component input: `ctx.canvas(..., focusable=True, component_input=True)` makes a canvas a Tab stop that receives keys and text. `ctx.set_input_hook(fn)` sees each `cui.InputEvent` before CUI and can take it, and `ctx.dispatch_input(event, route)` replays it to `route(event)`. `dispatch_input` turns the hook off while it runs: CUI requires this, because a replayed TEXT event otherwise reaches the hook again. Building UI, injecting input or changing the hook inside a hook or route raises `RuntimeError`, as CUI forbids them there. An exception in a hook is raised at the next frame boundary.
+
+- Option fields that are pointers or arrays now have keywords. 12 of 84 remain: callbacks, a buffer without a size, and two structs cui-py cannot convert (`docs/dev/coverage.md`). A field C reads and writes takes a `cui.Ref`, such as `ui.treemap(..., selected=sel)` with `sel = cui.Ref(-1)`. A `Ref` owns the storage C points at and lives until the frame ends, because some components write it later: a tree table writes `cursor` in `tree_table_end`. An array takes a sequence, and its count field is set from `len()`. An array whose length comes from a parameter or is fixed raises `ValueError` on any other length, since C reads that many entries. Each field is listed by hand in `tools/gen_bindings.py`: a pointer that looks like one value can be an array, as `data_grid`'s `selected` is.
+
+  ```python
+  sel = cui.Ref(-1)
+  ui.treemap("t", items, selected=sel)
+  ui.segmented("view", ["List", "Board"], i, icons=[cui.ICON_LIST, cui.ICON_LAYOUT_DASHBOARD])
+  ```
+
+  The count keywords these arrays now set are gone, such as `label_count`, `place_count`, `tick_count` and `meter_channels`.
 
 ### Changed
 
+- CUI 1.5.0 ([release notes](https://github.com/yappologistic/CUI/releases/tag/v1.5.0)). The generator wraps 421 entries, up from 372, and 48 more are written by hand, up from 35; `docs/dev/coverage.md` lists the 34 not wrapped yet. `ctx.spinner(size, ...)` now takes `cui_spinner_ex`'s options, such as `style` and `color`. Charts, gauges and the series palette draw differently, and the radial gauge has no needle. `cui-state-reset.patch` is regenerated against 1.5.0, which keeps the `cui_state` behaviour it fixes.
+
 - `make build` reuses `build/{wheel_tag}` and builds without isolation, so a rebuild recompiles only changed files. It now takes 0.6 s; it took 28 s before. In a new isolated environment, scikit-build-core deletes `CMakeCache.txt` and `CMakeFiles/`, so a persistent build directory alone did not help. `make build-pty` and `make test-asan` use their own directories, because CMake caches options and flags. `cython` and `scikit-build-core` are now in the dev group.
 
-- Wheels target the stable ABI (`cp310-abi3`): one wheel per platform covers CPython 3.10 and later, including versions released after the build. Free-threaded builds cannot use the stable ABI and keep version-specific wheels. The build now needs Cython 3.1 or later.
+- Wheels target the stable ABI (`cp311-abi3`): one wheel per platform covers CPython 3.11 and later, including versions released after the build. 3.11 over 3.10 because the buffer protocol joined the stable ABI in 3.11, and `image_update` would otherwise copy each frame through `bytes`. Python 3.10 is no longer supported. Free-threaded builds cannot use the stable ABI and keep version-specific wheels. The build now needs Cython 3.1 or later.
 
 ## [0.1.0]
 

@@ -1,9 +1,16 @@
 /* Native file dialogs and URL opening, shared by every backend on a given
  * operating system: Win32 common dialogs, AppleScript on macOS, and zenity or
- * kdialog on Linux and BSD. */
+ * kdialog on Linux and BSD. Android (no dialogs, no URLs from the backend) and
+ * iOS (its own delegate provides both) define these in their backend file. */
 #include "cui_platform.h"
 
-#if defined(_WIN32)
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
+#if defined(__ANDROID__) || TARGET_OS_IPHONE
+/* both functions are in the android / ios backend */
+#elif defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -11,6 +18,7 @@
 #include <commdlg.h>
 #include <shlobj.h>
 #include <shellapi.h>
+#include <wchar.h>
 
 /* UTF-8 to UTF-16; always terminated, empty on failure. */
 static bool cui__to_wide(const char *s, WCHAR *out, int cap) {
@@ -30,6 +38,49 @@ static bool cui__w_append(WCHAR *buf, int cap, int *n, const char *s) {
     return true;
 }
 
+typedef struct {
+    HWND owner;
+    const WCHAR *title;
+    WCHAR *path;
+} cui__folder_dialog;
+
+/* Return S_OK for a filesystem selection, S_FALSE on cancel, or the COM failure. */
+static DWORD WINAPI cui__browse_folder(void *data) {
+    cui__folder_dialog *dialog = data;
+    HRESULT com = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    if (FAILED(com)) return (DWORD)com;
+    BROWSEINFOW info = { 0 };
+    info.hwndOwner = dialog->owner;
+    info.lpszTitle = dialog->title;
+    info.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    LPITEMIDLIST pidl = SHBrowseForFolderW(&info);
+    BOOL selected = FALSE;
+    if (pidl) {
+        selected = SHGetPathFromIDListW(pidl, dialog->path);
+        CoTaskMemFree(pidl);
+    }
+    CoUninitialize();
+    return selected ? S_OK : S_FALSE;
+}
+
+/* During the modal call the Shell sends synchronous messages to the owner.
+ * Dispatch those without consuming queued input or running the app's timers. */
+static bool cui__choose_folder(HWND owner, const WCHAR *title, WCHAR *path) {
+    cui__folder_dialog dialog = { owner, title, path };
+    DWORD result = cui__browse_folder(&dialog);
+    if (result != (DWORD)RPC_E_CHANGED_MODE) return result == S_OK;
+    HANDLE thread = CreateThread(NULL, 0, cui__browse_folder, &dialog, 0, NULL);
+    if (!thread) return false;
+    while (MsgWaitForMultipleObjects(1, &thread, FALSE, INFINITE, QS_SENDMESSAGE) == WAIT_OBJECT_0 + 1) {
+        MSG message;
+        PeekMessageW(&message, NULL, 0, 0, PM_NOREMOVE | PM_QS_SENDMESSAGE);
+    }
+    WaitForSingleObject(thread, INFINITE);
+    BOOL finished = GetExitCodeThread(thread, &result);
+    CloseHandle(thread);
+    return finished && result == S_OK;
+}
+
 bool cui__plat_file_dialog(cui_app *app, const cui_file_dialog_opts *o, char *out, size_t cap) {
     (void)app;
     HWND owner = GetActiveWindow();
@@ -37,21 +88,7 @@ bool cui__plat_file_dialog(cui_app *app, const cui_file_dialog_opts *o, char *ou
     cui__to_wide(o->title ? o->title : (o->kind == CUI_FILE_SAVE ? "Save" : "Open"), title, 256);
     WCHAR path[MAX_PATH * 4] = { 0 };
     if (o->kind == CUI_FILE_FOLDER) {
-        /* the new style folder dialog needs COM on this thread */
-        HRESULT com = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-        BROWSEINFOW bi;
-        memset(&bi, 0, sizeof bi);
-        bi.hwndOwner = owner;
-        bi.lpszTitle = title;
-        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-        LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
-        BOOL ok = FALSE;
-        if (pidl) {
-            ok = SHGetPathFromIDListW(pidl, path);
-            CoTaskMemFree(pidl);
-        }
-        if (SUCCEEDED(com)) CoUninitialize();
-        if (!ok) return false;
+        if (!cui__choose_folder(owner, title, path)) return false;
     } else {
         /* filter: "Images\0*.png;*.jpg\0All files\0*.*\0\0" */
         WCHAR filter[512];
@@ -81,7 +118,29 @@ bool cui__plat_file_dialog(cui_app *app, const cui_file_dialog_opts *o, char *ou
         ofn.nMaxFile = MAX_PATH * 4;
         ofn.lpstrTitle = title;
         ofn.Flags = OFN_EXPLORER | OFN_NOCHANGEDIR | (o->kind == CUI_FILE_SAVE ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
+        WCHAR directory[MAX_PATH * 4];
+        if (o->kind == CUI_FILE_SAVE) {
+            ofn.Flags |= OFN_NOTESTFILECREATE;
+            if (wcspbrk(path, L"\\/")) {
+                WCHAR *name = NULL;
+                DWORD length = GetFullPathNameW(path, MAX_PATH * 4, directory, &name);
+                if (length && length < MAX_PATH * 4) {
+                    if (name) {
+                        wmemcpy(path, name, wcslen(name) + 1);
+                        *name = 0;
+                    } else {
+                        path[0] = 0;
+                    }
+                    ofn.lpstrInitialDir = directory;
+                }
+            }
+        }
+        /* OFN_NOCHANGEDIR does not hold for GetOpenFileName, and a Save dialog that
+         * opens in lpstrInitialDir can return with the current directory there. */
+        WCHAR cwd[MAX_PATH * 4];
+        DWORD cwd_len = GetCurrentDirectoryW(MAX_PATH * 4, cwd);
         BOOL ok = o->kind == CUI_FILE_SAVE ? GetSaveFileNameW(&ofn) : GetOpenFileNameW(&ofn);
+        if (cwd_len && cwd_len < MAX_PATH * 4) SetCurrentDirectoryW(cwd);
         if (!ok) return false;
     }
     return WideCharToMultiByte(CP_UTF8, 0, path, -1, out, (int)cap, NULL, NULL) > 0;
@@ -150,7 +209,7 @@ static bool cui__have(const char *tool) {
 #endif
 
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
 static void cui__applescript_quote(char *dst, size_t cap, const char *src) {
     size_t o = 0;
     for (const char *p = src ? src : ""; *p && o + 3 < cap; p++) {
@@ -170,13 +229,16 @@ static bool cui__posix_file_dialog(const cui_file_dialog_opts *o, char *out, siz
         char types[300] = "";
         if (o->filter && *o->filter) {
             size_t k = (size_t)snprintf(types, sizeof types, " of type {");
-            for (const char *p = o->filter; *p && k + 8 < sizeof types;) {
+            for (const char *p = o->filter; *p;) {
                 const char *e = strchr(p, ';');
                 size_t l = e ? (size_t)(e - p) : strlen(p);
+                /* the separator, the quoted name, the closing brace and the terminator must all fit */
+                size_t need = (p == o->filter ? 0 : 2) + 1 + l + 1 + 1 + 1;
+                if (k + need > sizeof types) { types[0] = 0; break; }   /* omit the filter rather than send a broken script */
                 k += (size_t)snprintf(types + k, sizeof types - k, "%s\"%.*s\"", p == o->filter ? "" : ", ", (int)l, p);
                 p = e ? e + 1 : p + l;
             }
-            snprintf(types + k, sizeof types - k, "}");
+            if (types[0]) snprintf(types + k, sizeof types - k, "}");
         }
         snprintf(script, sizeof script, "POSIX path of (choose file with prompt \"%s\"%s)", title, types);
     }
@@ -221,6 +283,7 @@ static bool cui__posix_file_dialog(const cui_file_dialog_opts *o, char *out, siz
                 k += (size_t)snprintf(spec + k, sizeof spec - k, "%s*.%.*s", k ? " " : "", (int)l, p);
                 p = e ? e + 1 : p + l;
             }
+            if (k >= sizeof spec) k = sizeof spec - 1;   /* snprintf returns the length it wanted, which can pass the end */
             snprintf(spec + k, sizeof spec - k, "|%s", o->filter_name ? o->filter_name : "Files");
             cui__shell_quote(filter, sizeof filter, spec);
         }
