@@ -38,6 +38,16 @@ if(CUI_PY_PTY)
     if(CMAKE_VERSION VERSION_LESS 3.19)
         message(FATAL_ERROR "CUI_PY_PTY needs CMake 3.19 for libghostty-vt")
     endif()
+    # Zig targets the build host's CPU by default, and wheels run elsewhere.
+    # ghostty already builds generic macOS code; the arch is named for cross builds.
+    if(APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+        set(_zig_flags "-Dtarget=x86_64-macos")
+    elseif(APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+        set(_zig_flags "-Dtarget=aarch64-macos")
+    elseif(NOT APPLE)
+        set(_zig_flags "-Dcpu=baseline")
+    endif()
+    set(GHOSTTY_ZIG_BUILD_FLAGS "${_zig_flags}" CACHE STRING "Extra zig build flags")
     # Offline: -DFETCHCONTENT_SOURCE_DIR_GHOSTTY=/path/to/libghostty-vt-1.0.0
     include(FetchContent)
     FetchContent_Declare(ghostty
@@ -59,6 +69,8 @@ if(CUI_PY_PTY)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         # The archive bundles Zig's compiler_rt and ubsan_rt; keep them unexported.
         target_link_options(_core PRIVATE -Wl,--exclude-libs,libghostty-vt.a)
+        # libghostty-vt calls shm_open, which is in librt before glibc 2.34.
+        target_link_libraries(cuipy_pty PRIVATE rt)
     endif()
     install(FILES "${ghostty_SOURCE_DIR}/LICENSE" DESTINATION cui/licenses
         RENAME libghostty-vt.txt COMPONENT python)

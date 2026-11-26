@@ -26,7 +26,7 @@ cui.App("Hello", 420, 300).run(frame)
 
 ## Install
 
-cui-py needs CPython 3.11 or later. One `abi3` wheel per platform covers every later version.
+cui-py needs CPython 3.11 or later. One `abi3` wheel per platform covers every later version. The macOS wheels need macOS 13 or later.
 
 ```bash
 pip install cui-py
@@ -113,16 +113,18 @@ make test
 
 The tests use this.
 
-## Terminal on a pty (optional)
+## Terminal on a pty
 
-`cui.Pty` runs a child process on a pseudo-terminal, and `ui.pty(id, p)` shows it. [libghostty-vt](https://lib.ghostty.org/vt/) 1.0.0 parses the output. The view code comes from [cui-repl](thirdparty/cui-repl/VENDORED). It is off by default. It builds only on macOS and Linux, and needs [Zig 0.17](https://lib.ghostty.org/vt/installing.html) and CMake 3.19 or later:
+`cui.Pty` runs a child process on a pseudo-terminal, and `ui.pty(id, p)` shows it. [libghostty-vt](https://lib.ghostty.org/vt/) 1.0.0 parses the output. The view code comes from [cui-repl](thirdparty/cui-repl/VENDORED). The Linux and macOS wheels include it. Windows has no pty, and `cui.PTY_AVAILABLE` is false there.
+
+A source build leaves it off. To turn it on you need [Zig 0.17](https://lib.ghostty.org/vt/installing.html) and CMake 3.19 or later:
 
 ```bash
 make build-pty                                           # from a checkout
 pip install cui-py --no-binary cui-py -C cmake.define.CUI_PY_PTY=ON
 ```
 
-The first build downloads libghostty-vt (SHA-256 pinned in `CMakeLists.txt`). `cui.PTY_AVAILABLE` says whether the build has it.
+The first build downloads libghostty-vt (SHA-256 pinned in `CMakeLists.txt`).
 
 ```python
 with cui.Pty(["python3", "-q"]) as p:

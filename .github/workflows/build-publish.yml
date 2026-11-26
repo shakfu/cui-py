@@ -28,7 +28,19 @@ env:
   CIBW_TEST_REQUIRES: pytest
   CIBW_TEST_COMMAND: pytest {project}/tests -v
   # CUI's Linux backend needs the X11 headers; libX11 is on the manylinux allowlist.
-  CIBW_BEFORE_ALL_LINUX: "dnf install -y libX11-devel || yum install -y libX11-devel"
+  CIBW_BEFORE_ALL_LINUX: >-
+    (dnf install -y libX11-devel xz || yum install -y libX11-devel xz)
+    && sh {project}/tools/install-zig.sh /opt/zig
+  # cui.Pty on Linux and macOS. libghostty-vt's minimum macOS is 13.0.
+  CIBW_CONFIG_SETTINGS_LINUX: cmake.define.CUI_PY_PTY=ON
+  CIBW_CONFIG_SETTINGS_MACOS: cmake.define.CUI_PY_PTY=ON
+  CIBW_ENVIRONMENT_LINUX: PATH=/opt/zig:$PATH
+  CIBW_BEFORE_ALL_MACOS: sh {project}/tools/install-zig.sh $HOME/.zig-0.17.1
+  CIBW_ENVIRONMENT_MACOS: PATH=$HOME/.zig-0.17.1:$PATH MACOSX_DEPLOYMENT_TARGET=13.0
+  CIBW_TEST_COMMAND_LINUX: >-
+    python -c "import cui, sys; sys.exit(not cui.PTY_AVAILABLE)" && pytest {project}/tests -v
+  CIBW_TEST_COMMAND_MACOS: >-
+    python -c "import cui, sys; sys.exit(not cui.PTY_AVAILABLE)" && pytest {project}/tests -v
 
 jobs:
   build-sdist:
@@ -51,25 +63,26 @@ jobs:
           retention-days: 14
 
   build-wheels-linux:
-    name: Build wheels (Linux)
-    runs-on: ubuntu-latest
+    name: Build wheels (Linux ${{ matrix.arch }})
+    # Native arm runners: zig building libghostty-vt under QEMU is too slow.
+    strategy:
+      matrix:
+        include:
+          - { runner: ubuntu-latest, arch: x86_64 }
+          - { runner: ubuntu-24.04-arm, arch: aarch64 }
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.2
         env:
-          CIBW_ARCHS_LINUX: x86_64 aarch64
+          CIBW_ARCHS_LINUX: ${{ matrix.arch }}
 
       - name: Upload wheels
         uses: actions/upload-artifact@v7
         with:
-          name: wheels-linux
+          name: wheels-linux-${{ matrix.arch }}
           path: wheelhouse/*.whl
           retention-days: 14
 
@@ -120,22 +133,11 @@ jobs:
           name: sdist
           path: dist/
 
-      - name: Download Linux wheels
+      - name: Download wheels
         uses: actions/download-artifact@v8
         with:
-          name: wheels-linux
-          path: dist/
-
-      - name: Download macOS wheels
-        uses: actions/download-artifact@v8
-        with:
-          name: wheels-macos
-          path: dist/
-
-      - name: Download Windows wheels
-        uses: actions/download-artifact@v8
-        with:
-          name: wheels-windows
+          pattern: wheels-*
+          merge-multiple: true
           path: dist/
 
       - name: List all artifacts

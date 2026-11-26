@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- `cui.Pty` and `ui.pty(id, p)`: a child process on a pseudo-terminal, shown by cui-repl's terminal view and emulated by libghostty-vt 1.0.0. It is behind the CMake option `CUI_PY_PTY`, off by default. It is POSIX only and needs Zig 0.17 to build. A default build compiles a stub, so `cui.Pty()` raises and `cui.PTY_AVAILABLE` is false. The view is compiled into `_core` and not a second extension module, because a second module would link its own copy of CUI and run it on contexts that `_core` created. `thirdparty/cui-repl/src/cuix.c` calls CUI's public API for focus queries, the cursor and the clipboard, and reads the private `cui_internal.h` for text, keys, Tab, setting focus and the wheel, so a CUI update can break it.
+- `cui.Pty` and `ui.pty(id, p)`: a child process on a pseudo-terminal, shown by cui-repl's terminal view and emulated by libghostty-vt 1.0.0. The Linux and macOS wheels include it. A source build needs Zig 0.17 and the CMake option `CUI_PY_PTY`; without it, and on Windows, `cui.Pty()` raises and `cui.PTY_AVAILABLE` is false. The view is compiled into `_core` and not a second extension module, because a second module would link its own copy of CUI and run it on contexts that `_core` created. `thirdparty/cui-repl/src/cuix.c` calls CUI's public API for focus queries, the cursor and the clipboard, and reads the private `cui_internal.h` for text, keys, Tab, setting focus and the wheel, so a CUI update can break it.
 
 - Window state and placement on `App`: `maximize`, `minimize`, `restore`, `window_state`, `set_position`, `placement` and `follow_system_theme`, and `App(placement=...)` to reopen a window where it was. `placement()` returns a `cui.WindowPlacement`. CUI clamps a placement's size to the minimum size.
 
@@ -34,7 +34,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `make build` reuses `build/{wheel_tag}` and builds without isolation, so a rebuild recompiles only changed files. It now takes 0.6 s; it took 28 s before. In a new isolated environment, scikit-build-core deletes `CMakeCache.txt` and `CMakeFiles/`, so a persistent build directory alone did not help. `make build-pty` and `make test-asan` use their own directories, because CMake caches options and flags. `cython` and `scikit-build-core` are now in the dev group.
 
-- Wheels target the stable ABI (`cp311-abi3`): one wheel per platform covers CPython 3.11 and later, including versions released after the build. 3.11 over 3.10 because the buffer protocol joined the stable ABI in 3.11, and `image_update` would otherwise copy each frame through `bytes`. Python 3.10 is no longer supported. Free-threaded builds cannot use the stable ABI and keep version-specific wheels. The build now needs Cython 3.1 or later.
+- macOS wheels need macOS 13 or later, up from 10.9 (x86_64) and 11 (arm64), because libghostty-vt targets 13.
+
+- Wheels target `cp311-abi3`, up from `cp310-abi3`. 3.11 over 3.10 because the buffer protocol joined the stable ABI in 3.11, and `image_update` would otherwise copy each frame through `bytes`. Python 3.10 is no longer supported. Free-threaded builds cannot use the stable ABI and keep version-specific wheels. The build now needs Cython 3.1 or later.
 
 ## [0.1.0]
 
